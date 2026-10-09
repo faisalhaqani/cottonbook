@@ -1,8 +1,8 @@
 {
   "name": "cottonbook",
   "private": true,
-  "version": "1.0.0",
-  "description": "CottonBook, cotton breeder trait recorder and analysis desktop app",
+  "version": "1.0.1",
+  "description": "CottonBook \u2014 cotton breeder trait recorder and analysis desktop app",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
