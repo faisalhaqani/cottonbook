@@ -1,0 +1,13 @@
+{
+  "name": "cottonbook",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CottonBook \u2014 cotton breeder trait recorder and analysis desktop app",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

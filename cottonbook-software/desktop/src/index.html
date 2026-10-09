@@ -1,0 +1,3277 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CottonBook — breeder trait recorder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<style>
+/* ============================================================
+   CottonBook — design tokens
+   Base unit 4px. Everything is a multiple of 4 or 8.
+   ============================================================ */
+:root{
+  --paper:#F4FBF0;        /* app canvas: the palest leaf wash */
+  --surface:#FFFFFF;      /* cards, sheets, rows */
+  --surface-2:#F1F9EB;    /* zebra rows, inset wells */
+  --ink:#1A231C;          /* primary text */
+  --ink-2:#4C5A4F;        /* secondary text */
+  --ink-3:#7A877C;        /* tertiary / meta */
+  --line:#DDEBD5;         /* hairlines, input borders */
+  --line-2:#EFF7EA;       /* soft dividers */
+  --leaf:#38872C;         /* primary action — 4.9:1 on white */
+  --leaf-press:#2A6B21;
+  --leaf-bright:#6CC24A;  /* fills, bars, rings, map shading */
+  --leaf-tint:#E7F6DE;    /* selected background */
+  --leaf-soft:#F1FAEA;    /* hover wash */
+  --leaf-ring:#A9DC92;
+  --seed:#7A4A12;         /* coded values, mono accents */
+  --amber:#C08A12;        /* incomplete / attention */
+  --amber-tint:#FDF4DD;
+  --flag:#A6342A;         /* destructive, errors */
+  --flag-tint:#FCEEEC;
+
+  --r-sm:6px; --r:10px; --r-md:14px; --r-lg:20px;
+  --sh-pop:0 2px 4px rgba(26,70,20,.06), 0 16px 40px rgba(26,70,20,.14);
+  --sh-rail:0 1px 0 var(--line);
+
+  --sans:'IBM Plex Sans', system-ui, sans-serif;
+  --serif:'IBM Plex Serif', Georgia, serif;
+  --mono:'IBM Plex Mono', ui-monospace, monospace;
+
+  --rail:244px;
+  --bar:56px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;height:100%;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:none;padding:0}
+h1,h2,h3,h4{margin:0;font-weight:600;line-height:1.2}
+p{margin:0}
+:focus-visible{outline:2px solid var(--leaf);outline-offset:2px;border-radius:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---------- type scale ---------- */
+.t-display{font-family:var(--serif);font-size:30px;font-weight:600;letter-spacing:-.01em;line-height:1.18}
+.t-title{font-family:var(--serif);font-size:21px;font-weight:600;line-height:1.25}
+.t-h{font-size:16px;font-weight:600;line-height:1.3}
+.t-sh{font-size:14px;font-weight:600}
+.t-body{font-size:14px}
+.t-small{font-size:13px;color:var(--ink-2)}
+.t-meta{font-size:12px;color:var(--ink-3);line-height:1.4}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"zero"1}
+
+/* ---------- app frame ---------- */
+#app{min-height:100%;display:flex;flex-direction:column}
+.topbar{
+  height:var(--bar);flex:0 0 auto;background:var(--surface);
+  border-bottom:1px solid var(--line);display:flex;align-items:center;
+  gap:16px;padding:0 20px;position:sticky;top:0;z-index:40;
+}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand-mark{
+  width:28px;height:28px;border-radius:7px;background:linear-gradient(0deg,var(--leaf),var(--leaf));
+  display:grid;place-items:center;flex:0 0 auto;
+}
+.brand-name{font-family:var(--serif);font-size:16px;font-weight:600;letter-spacing:.01em}
+.brand-sub{font-size:12px;color:var(--ink-3);padding-left:10px;margin-left:2px;border-left:1px solid var(--line)}
+.topbar-mid{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+.topbar-end{display:flex;align-items:center;gap:8px}
+
+.shell{flex:1;display:flex;align-items:stretch;min-height:0}
+.rail{
+  width:var(--rail);flex:0 0 var(--rail);background:var(--surface);
+  border-right:1px solid var(--line);padding:16px 12px;
+  display:flex;flex-direction:column;gap:4px;position:sticky;top:var(--bar);
+  height:calc(100vh - var(--bar));overflow:auto;
+}
+.rail-group{font-size:11px;font-weight:600;color:var(--ink-3);letter-spacing:.06em;padding:12px 8px 6px}
+.rail-item{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r);
+  color:var(--ink-2);text-align:left;width:100%;transition:background .12s ease;
+}
+.rail-item:hover{background:var(--surface-2);color:var(--ink)}
+.rail-item[aria-current="true"]{background:var(--leaf-tint);color:var(--leaf-press);font-weight:500;box-shadow:inset 3px 0 0 var(--leaf-bright)}
+.rail-item .ic{flex:0 0 auto;opacity:.85}
+.rail-count{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+
+.main{flex:1;min-width:0;overflow:auto}
+.page{max-width:1120px;margin:0 auto;padding:28px 32px 80px}
+.page-wide{max-width:1480px}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:4px}
+.page-sub{color:var(--ink-2);font-size:14px;max-width:72ch;margin-top:6px}
+.hr{height:1px;background:var(--line);margin:24px 0}
+
+/* ---------- buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  height:36px;padding:0 14px;border-radius:var(--r);border:1px solid var(--line);
+  background:var(--surface);font-size:14px;font-weight:500;color:var(--ink);
+  transition:background .12s ease,border-color .12s ease,box-shadow .12s ease;
+}
+.btn:hover{background:var(--leaf-soft);border-color:var(--leaf-ring)}
+.btn:active{background:var(--leaf-tint);transform:translateY(1px)}
+.btn[disabled]{opacity:.42;cursor:not-allowed;background:var(--surface)}
+.btn-primary{background:var(--leaf);border-color:var(--leaf);color:#fff}
+.btn-primary:hover{background:#41992F;border-color:#41992F;box-shadow:0 2px 8px rgba(56,135,44,.22)}
+.btn-primary:active{background:var(--leaf-press);transform:translateY(1px);box-shadow:none}
+.btn-ghost{border-color:transparent;background:transparent}
+.btn-ghost:hover{background:var(--surface-2);border-color:transparent}
+.btn-danger{color:var(--flag);border-color:#E7CFCB}
+.btn-danger:hover{background:var(--flag-tint)}
+.btn-sm{height:30px;padding:0 10px;font-size:13px}
+.btn-lg{height:42px;padding:0 20px}
+.btn-icon{width:36px;padding:0}
+
+/* ---------- cards / sheets ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md)}
+.card-pad{padding:20px}
+.sheet{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.sheet-head{
+  display:flex;align-items:center;gap:12px;padding:12px 16px;
+  border-bottom:1px solid var(--line);background:var(--surface);
+}
+.sheet-body{padding:16px}
+
+/* ---------- pills / tags ---------- */
+.pill{
+  display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;
+  border-radius:12px;font-size:12px;font-weight:500;background:var(--surface-2);
+  color:var(--ink-2);border:1px solid var(--line-2);
+}
+.pill-leaf{background:var(--leaf-tint);color:var(--leaf);border-color:#CFE0D5}
+.pill-amber{background:var(--amber-tint);color:#7E5A08;border-color:#EEDCB0}
+.pill-plain{background:transparent}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto}
+
+/* ---------- save status ---------- */
+.save{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-3)}
+.save .dot{background:var(--leaf)}
+.save[data-state="saving"] .dot{background:var(--amber)}
+.save[data-state="saving"]{color:#7E5A08}
+
+/* ---------- forms ---------- */
+.field{display:flex;flex-direction:column;gap:6px}
+.label{font-size:13px;font-weight:500;color:var(--ink-2)}
+.hint{font-size:12px;color:var(--ink-3)}
+.input,.select{
+  height:38px;padding:0 11px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface);width:100%;transition:border-color .12s ease,box-shadow .12s ease;
+}
+.input:hover,.select:hover{border-color:#C2CABE}
+.input:focus,.select:focus{outline:none;border-color:var(--leaf);box-shadow:0 0 0 3px rgba(39,84,58,.12)}
+.input::placeholder{color:#A3ADA6}
+.select{appearance:none;background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%234A564E' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 11px center;padding-right:30px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+
+/* segmented control */
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:2px;gap:2px}
+.seg button{height:30px;padding:0 14px;border-radius:var(--r-sm);font-size:13px;font-weight:500;color:var(--ink-2)}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--leaf);box-shadow:0 1px 3px rgba(26,35,28,.12)}
+.seg button{transition:color .12s ease,background .12s ease}
+
+/* choice cards (design selection) */
+.choice{
+  display:block;text-align:left;border:1px solid var(--line);border-radius:var(--r-md);
+  padding:16px;background:var(--surface);transition:border-color .12s ease,background .12s ease;width:100%;
+}
+.choice:hover{border-color:var(--leaf-ring);background:var(--surface-2)}
+.choice[aria-pressed="true"]{border-color:var(--leaf);background:var(--leaf-tint);box-shadow:inset 0 0 0 1px var(--leaf)}
+.choice h4{font-size:14px;margin-bottom:4px}
+.choice p{font-size:13px;color:var(--ink-2)}
+
+/* ---------- tables ---------- */
+.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.tbl th{
+  text-align:left;font-weight:600;font-size:12px;color:var(--ink-2);
+  padding:9px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:2;white-space:nowrap;
+}
+.tbl td{padding:8px 12px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+.tbl tbody tr:hover td{background:#FAFBF9}
+.tbl .r{text-align:right}
+.tbl td.num,.tbl th.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.tbl-fixed{table-layout:fixed}
+.scroll-x{overflow-x:auto}
+.sticky-col{position:sticky;left:0;background:var(--surface);z-index:1;border-right:1px solid var(--line)}
+.tbl tbody tr:hover .sticky-col{background:#FAFBF9}
+th.sticky-col{z-index:3;background:var(--surface-2)}
+
+/* ---------- empty state ---------- */
+.empty{text-align:center;padding:72px 24px;max-width:480px;margin:0 auto}
+.empty h3{font-family:var(--serif);font-size:20px;margin-bottom:8px}
+.empty p{color:var(--ink-2);font-size:14px;margin-bottom:20px}
+
+/* ---------- project tiles ---------- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.tile{
+  text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:18px;display:flex;flex-direction:column;gap:12px;
+  transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease;
+}
+.tile:hover{border-color:var(--leaf-ring);box-shadow:0 4px 14px rgba(56,135,44,.10);transform:translateY(-1px)}
+.tile-new{
+  border-style:dashed;border-color:#C5CEC6;background:transparent;align-items:center;justify-content:center;
+  min-height:168px;color:var(--ink-2);gap:8px;
+}
+.tile-new:hover{background:var(--surface);border-color:var(--leaf);color:var(--leaf)}
+.tile-stats{display:flex;gap:18px;margin-top:auto;padding-top:12px;border-top:1px solid var(--line-2)}
+.stat-k{font-family:var(--mono);font-size:15px;font-weight:500}
+.stat-l{font-size:11px;color:var(--ink-3)}
+
+/* progress bar */
+.bar{height:5px;background:var(--line-2);border-radius:3px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--leaf-bright);border-radius:3px;transition:width .3s cubic-bezier(.4,0,.2,1)}
+.bar.partial>i{background:var(--amber)}
+
+/* ---------- trait picker ---------- */
+.pick-presets{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:14px}
+.pick-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+.pick-col>h4{font-size:12px;color:var(--ink-3);letter-spacing:.04em;margin-bottom:8px}
+.pgroup{border:1px solid var(--line);border-radius:var(--r);margin-bottom:8px;overflow:hidden;background:var(--surface)}
+.pgrp-head{
+  display:flex;align-items:center;gap:9px;width:100%;padding:9px 11px;text-align:left;
+  font-size:13px;font-weight:500;transition:background .12s ease;
+}
+.pgrp-head:hover{background:var(--leaf-soft)}
+.pgrp-head small{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-3);font-weight:400}
+.cbox{
+  width:16px;height:16px;border-radius:3px;border:1.5px solid var(--line);flex:0 0 auto;
+  display:grid;place-items:center;transition:background .12s ease,border-color .12s ease;
+}
+.cbox[data-s="all"]{background:var(--leaf);border-color:var(--leaf)}
+.cbox[data-s="all"]::after{content:'';width:9px;height:9px;
+  background:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2l2.3 2.3L8.5 2.6' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
+.cbox[data-s="some"]{background:var(--leaf-tint);border-color:var(--leaf)}
+.cbox[data-s="some"]::after{content:'';width:8px;height:2px;background:var(--leaf);border-radius:1px}
+.pchips{display:flex;flex-wrap:wrap;gap:4px;padding:0 11px 11px}
+.tchip{
+  height:25px;padding:0 9px;border-radius:13px;border:1px solid var(--line-2);background:var(--surface-2);
+  font-size:12px;color:var(--ink-3);transition:all .12s ease;
+}
+.tchip:hover{border-color:var(--leaf-ring);color:var(--ink-2)}
+.tchip[aria-pressed="true"]{background:var(--leaf-tint);border-color:var(--leaf-ring);color:var(--leaf-press);font-weight:500}
+.pick-bar{
+  display:flex;align-items:center;gap:10px;padding:10px 13px;border-radius:var(--r);
+  background:var(--leaf-tint);border:1px solid var(--leaf-ring);font-size:13px;color:var(--leaf-press);margin-bottom:14px;
+}
+@media (max-width:720px){ .pick-cols{grid-template-columns:1fr} }
+
+/* ---------- modal ---------- */
+.scrim{position:fixed;inset:0;background:rgba(20,26,22,.38);display:grid;place-items:center;z-index:80;padding:24px}
+.modal{
+  background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--sh-pop);
+  width:min(840px,100%);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;
+}
+.modal-head{padding:20px 24px 16px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:16px}
+.modal-body{padding:24px;overflow:auto}
+.modal-foot{padding:16px 24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--surface-2)}
+.steps{display:flex;gap:6px;align-items:center}
+.step-dot{width:7px;height:7px;border-radius:50%;background:var(--line)}
+.step-dot[data-on="1"]{background:var(--leaf)}
+
+/* ---------- unit rail (plot picker) ---------- */
+.unitbar{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:12px 14px;display:flex;flex-direction:column;gap:10px;margin-bottom:16px;
+}
+.unit-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chip{
+  height:30px;padding:0 11px;border-radius:var(--r);border:1px solid var(--line);
+  background:var(--surface);font-size:13px;display:inline-flex;align-items:center;gap:7px;
+  transition:border-color .12s ease,background .12s ease;color:var(--ink-2);
+}
+.chip:hover{background:var(--surface-2);border-color:#C2CABE;color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--leaf);border-color:var(--leaf);color:#fff;box-shadow:0 1px 6px rgba(56,135,44,.26)}
+.chip:active{transform:scale(.97)}
+.chip[aria-pressed="true"] .ring{border-color:rgba(255,255,255,.55)}
+.ring{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--line);flex:0 0 auto}
+.ring[data-f="full"]{background:var(--leaf-bright);border-color:var(--leaf-bright)}
+.ring[data-f="part"]{background:var(--amber);border-color:var(--amber)}
+.chip[aria-pressed="true"] .ring[data-f="full"]{background:#fff}
+.chip[aria-pressed="true"] .ring[data-f="part"]{background:#F2D89B}
+
+/* ---------- trait recording ---------- */
+.rec{display:grid;grid-template-columns:200px 1fr;gap:24px;align-items:start}
+.toc{position:sticky;top:16px;display:flex;flex-direction:column;gap:2px}
+.toc a{
+  display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-radius:var(--r);
+  color:var(--ink-2);text-decoration:none;font-size:13px;
+}
+.toc a:hover{background:var(--surface);color:var(--ink)}
+.toc a.on{background:var(--surface);color:var(--leaf);font-weight:500}
+.toc small{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+
+.tgroup{margin-bottom:28px;scroll-margin-top:16px}
+.tgroup-head{display:flex;align-items:baseline;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.tgroup-head h3{font-family:var(--serif);font-size:17px}
+
+
+.trow{
+  background:var(--surface);border:1px solid var(--line);border-top-width:0;
+  padding:14px 16px;display:grid;grid-template-columns:230px 1fr;gap:20px;align-items:start;
+}
+.trow:first-of-type{border-top-width:1px;border-radius:var(--r-md) var(--r-md) 0 0}
+.trow:last-of-type{border-radius:0 0 var(--r-md) var(--r-md)}
+.trow:only-of-type{border-radius:var(--r-md)}
+.trow[data-filled="0"]{box-shadow:inset 3px 0 0 var(--amber)}
+.trow[data-filled="1"]{box-shadow:inset 3px 0 0 var(--leaf-bright)}
+.trow:hover{background:var(--leaf-soft)}
+.trow{transition:background .12s ease,box-shadow .18s ease}
+.tname{display:flex;flex-direction:column;gap:3px}
+.tname b{font-weight:500;font-size:14px}
+.tstage{font-size:11px;color:var(--ink-3)}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{
+  height:32px;padding:0 12px;border-radius:var(--r);border:1px solid var(--line);
+  background:var(--surface);font-size:13px;color:var(--ink-2);display:inline-flex;align-items:center;gap:7px;
+  transition:border-color .12s ease,background .12s ease,color .12s ease;
+}
+.opt:hover{border-color:var(--leaf-ring);background:var(--surface-2);color:var(--ink)}
+.opt[aria-pressed="true"]{background:var(--leaf-tint);border-color:var(--leaf);color:var(--leaf-press);font-weight:500}
+.opt[aria-pressed="true"]::before{
+  content:'';width:13px;height:13px;border-radius:50%;background:var(--leaf);flex:0 0 auto;
+  background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 13 13'%3E%3Cpath d='M3.2 6.8l2.2 2.2 4.4-5' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  animation:pop .18s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+.opt:active{transform:scale(.97)}
+.opt code{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.opt[aria-pressed="true"] code{color:var(--leaf)}
+
+.qty{display:flex;align-items:center;gap:10px}
+.qty input{
+  width:132px;height:36px;text-align:right;padding:0 10px;border:1px solid var(--line);
+  border-radius:var(--r);font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;
+  background:var(--surface);
+}
+.qty input:hover{border-color:#C2CABE}
+.qty input:focus{outline:none;border-color:var(--leaf);box-shadow:0 0 0 3px rgba(39,84,58,.12)}
+.qty input.bad{border-color:var(--flag);box-shadow:0 0 0 3px rgba(155,47,34,.10)}
+.unitlabel{font-size:13px;color:var(--ink-3);font-family:var(--mono)}
+.prevmeans{font-size:12px;color:var(--ink-3);margin-left:auto;font-family:var(--mono)}
+
+/* ---------- stats output ---------- */
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.statcell{background:var(--surface);padding:14px 16px}
+.statcell .v{font-family:var(--mono);font-size:19px;font-weight:500;letter-spacing:-.01em}
+.statcell .l{font-size:12px;color:var(--ink-3);margin-top:2px}
+.sig{font-family:var(--mono);font-size:12px}
+.sig-3{color:var(--leaf);font-weight:600}
+.sig-ns{color:var(--ink-3)}
+.letters{font-family:var(--mono);font-weight:600;color:var(--seed)}
+.note{background:var(--surface-2);border:1px solid var(--line-2);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--ink-2)}
+
+/* correlation heat */
+.corr td.cell{text-align:center;font-family:var(--mono);font-size:12px;padding:6px 8px;border:1px solid #fff}
+/* toast */
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:28px;z-index:90;
+  background:var(--ink);color:#fff;border-radius:var(--r);padding:10px 16px;font-size:13px;
+  box-shadow:var(--sh-pop);display:flex;gap:10px;align-items:center;
+}
+.kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;padding:1px 5px;background:var(--surface-2);color:var(--ink-2)}
+
+@media (max-width:1080px){
+  .rec{grid-template-columns:1fr}
+  .toc{position:static;flex-direction:row;flex-wrap:wrap;margin-bottom:8px}
+}
+@media (max-width:860px){
+  .rail{display:none}
+  .page{padding:20px 16px 72px}
+  .trow{grid-template-columns:1fr;gap:10px}
+  .grid-2,.grid-3{grid-template-columns:1fr}
+}
+
+/* ============================================================
+   THEME REFRESH — white surfaces, fresh leaf green, softer
+   geometry, and feedback on every touchable thing.
+   ============================================================ */
+.btn{border-radius:10px}
+.btn:active{transform:translateY(1px)}
+.btn-primary{box-shadow:0 1px 0 rgba(26,70,20,.14)}
+.pill{border-radius:999px;height:26px;padding:0 11px}
+.seg{border-radius:999px;padding:3px}
+.seg button{border-radius:999px}
+.card,.sheet,.unitbar,.tile,.note,.statgrid{border-radius:14px}
+.modal{border-radius:20px}
+.input,.select,.qty input{border-radius:10px}
+.input:focus,.select:focus,.qty input:focus{border-color:var(--leaf);box-shadow:0 0 0 3px rgba(108,194,74,.26)}
+.rail-item{border-radius:10px}
+
+/* chips and options become pills with a real selected mark */
+.chip{border-radius:999px;height:32px;padding:0 13px}
+.chip:active{transform:scale(.97)}
+.chip[aria-pressed="true"]{background:var(--leaf);border-color:var(--leaf);box-shadow:0 1px 0 rgba(26,70,20,.16)}
+.opt{border-radius:999px;height:34px;padding:0 14px}
+.opt:active{transform:scale(.98)}
+.opt[aria-pressed="true"]{background:var(--leaf-tint);border-color:var(--leaf);box-shadow:inset 0 0 0 1px var(--leaf)}
+.opt[aria-pressed="true"]::before{
+  content:'✓';display:grid;place-items:center;width:16px;height:16px;border-radius:50%;
+  background:var(--leaf);color:#fff;font-size:10px;line-height:1;margin-right:1px;
+}
+.tchip{border-radius:999px}
+.tchip[aria-pressed="true"]{background:var(--leaf-tint);border-color:var(--leaf);color:var(--leaf-press)}
+
+/* cards lift on hover so the grid feels alive */
+.tile{transition:transform .14s ease,box-shadow .14s ease,border-color .12s ease}
+.tile:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(26,70,20,.09)}
+.tile-new:hover{transform:translateY(-2px);background:var(--leaf-soft)}
+
+/* trait rows answer the cursor */
+.trow{transition:background .12s ease,box-shadow .12s ease}
+.trow:hover{background:var(--leaf-soft)}
+.trow[data-filled="1"]{box-shadow:inset 3px 0 0 var(--leaf-bright)}
+.bar>i{background:var(--leaf-bright)}
+.ring[data-f="full"]{background:var(--leaf-bright);border-color:var(--leaf-bright)}
+
+/* sticky plot bar: the save and move controls never scroll away */
+.plotbar{
+  position:sticky;bottom:12px;z-index:20;margin-top:22px;
+  display:flex;align-items:center;gap:14px;padding:12px 16px;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 6px 20px rgba(26,70,20,.10);
+}
+.plotbar .bar{flex:1;max-width:220px}
+.toast{border-radius:999px;background:var(--leaf-press)}
+.tgroup-head h3{color:var(--leaf-press)}
+.statcell .v{color:var(--leaf-press)}
+.brand-name{color:var(--leaf-press)}
+@media (max-width:860px){ .plotbar{flex-wrap:wrap} .plotbar .bar{max-width:none;order:3;width:100%} }
+
+/* ---- attribution ---- */
+.byline{margin-top:14px;color:var(--leaf);opacity:.62;font-size:13px;line-height:1.45}
+.byline strong{font-weight:500}
+.deptmark{
+  margin:34px auto 0;padding:14px 0 6px;max-width:1120px;text-align:center;
+  color:var(--leaf);opacity:.42;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;
+  border-top:1px solid var(--line-2);
+}
+
+/* ---- analysis procedure rows ---- */
+.procrow{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:10px;
+  text-align:left;width:100%;border:1px solid transparent;transition:background .12s ease}
+.procrow:hover:not([disabled]){background:var(--leaf-soft);border-color:var(--line)}
+.procrow[aria-pressed="true"]{background:var(--leaf-tint);border-color:var(--leaf-ring)}
+.procrow[disabled]{opacity:.45;cursor:not-allowed}
+.procrow strong{font-weight:500;font-size:13.5px}
+.procrow .cbox{margin-top:2px}
+
+/* ---- excel style grid ---- */
+table.grid{border-collapse:separate;border-spacing:0}
+table.grid td.gcell{padding:0;border-bottom:1px solid var(--line-2);border-right:1px solid var(--line-2)}
+table.grid td.gmean{background:var(--surface-2);font-weight:500;color:var(--ink-2)}
+table.grid tbody tr:hover td{background:var(--leaf-soft)}
+.ginp{width:100%;height:34px;border:none;background:transparent;text-align:right;padding:0 9px;
+  font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
+.ginp:focus{outline:none;background:#fff;box-shadow:inset 0 0 0 2px var(--leaf)}
+.ginp.bad{background:var(--flag-tint);color:var(--flag)}
+.gsel{width:100%;height:34px;border:none;background:transparent;padding:0 6px;font-size:12.5px;
+  color:var(--ink-2);appearance:none}
+.gsel[data-set]{color:var(--leaf-press);font-weight:500;background:var(--leaf-tint)}
+.gsel:focus{outline:none;box-shadow:inset 0 0 0 2px var(--leaf);background:#fff}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+
+/* ============================================================
+   1. TRAIT DICTIONARY — FSC&RD Morphological Descriptor, Cotton
+   Qualitative traits carry DUS-style numeric codes (1..n) so the
+   same record exports as both a readable label and an analysable
+   number. Stage tags come from the descriptor's own
+   "Important plant characteristics to be recorded" section.
+   ============================================================ */
+const STAGES = {
+  any:  'Any time',
+  seed: 'Seedling stage',
+  flow: 'Peak flowering',
+  preb: 'Before boll bursting',
+  fstb: 'First boll bursting',
+  pick: 'First picking',
+  finp: 'Final picking',
+  harv: 'Harvest maturity',
+  ging: 'After ginning'
+};
+
+const QUAL_GROUPS = [
+  { id:'gen', name:'General & maturity', traits:[
+    { k:'origin', n:'Origin', s:'any', o:['Local','Exotic'] },
+    { k:'brmethod', n:'Breeding method', s:'any', o:['Selection','Hybridization','Introduction','Any other'] },
+    { k:'vtype', n:'Type of variety', s:'any', o:['Upland','Desi','Upland hybrid'] },
+    { k:'maturity', n:'Maturity', s:'any', o:['Early','Medium','Late'] },
+  ]},
+  { id:'sdl', name:'Seedling', traits:[
+    { k:'sdl_color', n:'Seedling colour', s:'seed', o:['L. green','Green','Dark green'] },
+    { k:'fol_spot', n:'Foliage spot', s:'seed', o:['Absent','Present'] },
+  ]},
+  { id:'plt', name:'Plant', traits:[
+    { k:'growth', n:'Growth habit', s:'flow', o:['Compact','Medium compact','Spreading','Bushy'] },
+    { k:'pshape', n:'Plant shape', s:'flow', o:['Cylindrical','Conical','Spreading'] },
+    { k:'frbranch', n:'Fruiting branch type', s:'flow', o:['Normal','Short','Cluster'] },
+    { k:'mono_att', n:'Monopodia attitude', s:'flow', o:['Erect','Semi erect','Horizontal'] },
+    { k:'symp_att', n:'Sympodia attitude', s:'flow', o:['Erect','Semi erect','Horizontal'] },
+    { k:'stem_pig', n:'Stem pigmentation', s:'flow', o:['Weak','Medium','Strong'] },
+    { k:'stem_hair', n:'Stem tip hairiness', s:'flow', o:['Absent','Sparse','Medium','Profuse'] },
+    { k:'bud_goss', n:'Bud gossypol', s:'flow', o:['Glandless','Low','Normal','High'] },
+  ]},
+  { id:'lef', name:'Leaf', hint:'Observe the 4th leaf from the top.', traits:[
+    { k:'fol_dens', n:'Foliage density', s:'preb', o:['Sparse','Intermediate','Dense'] },
+    { k:'leaf_col', n:'Leaf colour', s:'flow', o:['Light green','Green','Dark green','Light red','Dark red'] },
+    { k:'pet_anth', n:'Petiole anthocyanin', s:'flow', o:['Absent','Present'] },
+    { k:'leaf_att', n:'Leaf attitude', s:'flow', o:['Erect','Semi erect','Horizontal'] },
+    { k:'leaf_type', n:'Leaf type', s:'flow', o:['Normal','Semi okra','Okra','Lanceolate'] },
+    { k:'leaf_app', n:'Leaf appearance', s:'flow', o:['Cup','Flat'] },
+    { k:'leaf_nect', n:'Leaf nectaries', s:'flow', o:['Absent','Present'] },
+    { k:'leaf_hair', n:'Leaf hairiness (pubescence)', s:'flow', o:['Absent','Sparse','Medium','Profuse'] },
+    { k:'leaf_goss', n:'Leaf gossypol glands', s:'flow', o:['Glandless','Low','Normal','High'] },
+  ]},
+  { id:'flw', name:'Flower', traits:[
+    { k:'flw_dur', n:'Flowering duration', s:'flow', o:['Short','Medium','Long'] },
+    { k:'flw_size', n:'Flower size', s:'flow', o:['Small','Medium','Large'] },
+    { k:'sepal_pig', n:'Sepal pigmentation', s:'flow', o:['Absent','Present'] },
+    { k:'petal_spot', n:'Petal spot', s:'flow', o:['Absent','Present'] },
+    { k:'nect', n:'Nectaries', s:'flow', o:['Absent','Present'] },
+    { k:'petal_col', n:'Petal colour', s:'flow', o:['White','Cream','Yellow','Pink','Red','Bicolor'] },
+    { k:'anther_col', n:'Anther colour', s:'flow', o:['White','Cream','Yellow','Red','Purple'] },
+    { k:'stamen_den', n:'Stamen density', s:'flow', o:['Lax','Semi dense','Dense'] },
+    { k:'stigma_pos', n:'Position of stigma', s:'flow', o:['Embedded','Exserted'] },
+    { k:'calyx', n:'Calyx size', s:'flow', o:['Short & narrow','Intermediate','Large / broad'] },
+    { k:'bract', n:'Bract type', s:'flow', o:['Normal','Frego'] },
+  ]},
+  { id:'bol', name:'Boll', traits:[
+    { k:'boll_habit', n:'Boll bearing habit', s:'fstb', o:['Solitary','Cluster'] },
+    { k:'boll_shape', n:'Boll shape', s:'preb', o:['Round','Oval','Conical'] },
+    { k:'boll_col', n:'Boll colour', s:'preb', o:['Green','Red'] },
+    { k:'boll_size', n:'Boll size', s:'preb', o:['Small','Medium','Large'] },
+    { k:'beak', n:'Beak size (prominence of boll tip)', s:'preb', o:['V. short','Short','Medium','Long','V. long'] },
+    { k:'boll_broad', n:'Boll broad at', s:'preb', o:['Base','Lower mid','Middle'] },
+    { k:'boll_surf', n:'Boll surface', s:'fstb', o:['Smooth','Finely pitted','Roughly pitted'] },
+    { k:'boll_tip', n:'Prominence of tip in boll', s:'preb', o:['Absent','Slight','Medium','Prominent'] },
+    { k:'goss', n:'Gossypol', s:'preb', o:['Glandless','Low','Normal','High'] },
+    { k:'bract_len', n:'Bracteole length', s:'flow', o:['Short','Medium','Long','V. long'] },
+    { k:'bract_wid', n:'Bracteole width', s:'flow', o:['Narrow','Medium','Wide'] },
+    { k:'boll_open', n:'Boll opening', s:'pick', o:['Close','Semi open','Open'] },
+  ]},
+  { id:'sed', name:'Seed', traits:[
+    { k:'seed_size', n:'Seed size', s:'ging', o:['Small','Medium','Bold'] },
+    { k:'seed_shape', n:'Seed shape', s:'ging', o:['Oblong','Semi orbicular','Obovate','Ellipsoid'] },
+    { k:'seed_coat', n:'Seed coat colour', s:'ging', o:['Brown','Dark brown'] },
+    { k:'seed_fuzz', n:'Seed fuzz', s:'ging', o:['Fuzz less','Semi fuzzy','Fuzzy','Densely fuzzy'] },
+    { k:'fuzz_col', n:'Fuzz colour', s:'harv', o:['White','Dusky white','Green tinge','Green tip'] },
+  ]},
+  { id:'fib', name:'Fibre', traits:[
+    { k:'fib_col', n:'Fibre colour', s:'harv', o:['Shiny white','White','Cream','Brownish','Greenish'] },
+    { k:'fib_group', n:'Fibre length group', s:'harv', o:['Short (<20.6 mm)','Medium (20.6–25.4)','Medium long (26.2–27.7)','Long (28.5–33.3)'] },
+  ]},
+  { id:'env', name:'Environmental adaptability', hint:'Scored under defined conditions.', traits:[
+    { k:'flw_resp', n:'Flowering response to seasons', s:'any', o:['Stable','Variable','Highly variable'] },
+    { k:'tol_drought', n:'Drought tolerance', s:'any', o:['Least tolerant','Medium','Most tolerant'] },
+    { k:'tol_salin', n:'Salinity tolerance', s:'any', o:['Least tolerant','Medium','Most tolerant'] },
+    { k:'tol_acid', n:'Acid soil tolerance', s:'any', o:['Least tolerant','Medium','Most tolerant'] },
+    { k:'tol_cold', n:'Cold tolerance', s:'any', o:['Least tolerant','Medium','Most tolerant'] },
+    { k:'tol_heat', n:'Heat tolerance', s:'any', o:['Least tolerant','Medium','Most tolerant'] },
+  ]},
+];
+
+const QUANT_GROUPS = [
+  { id:'phen', name:'Phenology', traits:[
+    { k:'d_matur', n:'Days to maturity', u:'days', s:'any', dp:0, max:400 },
+    { k:'d_flower', n:'Days to 50% flowering', u:'days', s:'flow', dp:0, max:400 },
+    { k:'d_open', n:'Days to 50% boll splitting', u:'days', s:'pick', dp:0, max:400 },
+  ]},
+  { id:'qplt', name:'Plant', traits:[
+    { k:'sdl_len', n:'Seedling length', u:'cm', s:'seed', dp:1, max:100 },
+    { k:'p_height', n:'Plant height', u:'cm', s:'finp', dp:1, max:400 },
+    { k:'nodes_1st', n:'Nodes to 1st monopodia', u:'count', s:'flow', dp:0, max:60 },
+    { k:'node_fb', n:'Node of first fruiting branch', u:'node', s:'flow', dp:1, max:40 },
+    { k:'mono_pl', n:'Monopodia per plant', u:'count', s:'flow', dp:1, max:40 },
+    { k:'symp_pl', n:'Sympodia per plant', u:'count', s:'flow', dp:1, max:80 },
+  ]},
+  { id:'qlef', name:'Leaf', traits:[
+    { k:'leaf_len', n:'Leaf length', u:'cm', s:'flow', dp:1, max:60 },
+    { k:'leaf_wid', n:'Leaf width', u:'cm', s:'flow', dp:1, max:60 },
+    { k:'pet_len', n:'Petiole length', u:'cm', s:'flow', dp:1, max:60 },
+    { k:'leaf_area', n:'Leaf area', u:'cm²', s:'flow', dp:1, max:600 },
+  ]},
+  { id:'qflw', name:'Flower', traits:[
+    { k:'stig_exs', n:'Stigma exsertion', u:'mm', s:'flow', dp:1, max:60 },
+    { k:'stig_hgt', n:'Stigma height', u:'mm', s:'flow', dp:1, max:80 },
+  ]},
+  { id:'qbol', name:'Boll & yield', traits:[
+    { k:'boll_len', n:'Boll length', u:'cm', s:'preb', dp:2, max:20 },
+    { k:'boll_brd', n:'Boll breadth', u:'cm', s:'preb', dp:2, max:20 },
+    { k:'ped_len', n:'Peduncle length', u:'cm', s:'preb', dp:2, max:30 },
+    { k:'bract_len_cm', n:'Bracteole length', u:'cm', s:'flow', dp:2, max:20 },
+    { k:'bract_wid_cm', n:'Bracteole width', u:'cm', s:'flow', dp:2, max:20 },
+    { k:'bractl_cm', n:'Bracteole length (measured)', u:'cm', s:'preb', dp:2, max:15 },
+    { k:'bractw_cm', n:'Bracteole width (measured)', u:'cm', s:'preb', dp:2, max:15 },
+    { k:'bolls_pl', n:'Bolls per plant', u:'count', s:'pick', dp:1, max:300 },
+    { k:'boll_wt', n:'Boll weight', u:'g', s:'pick', dp:2, max:20 },
+    { k:'y_seed', n:'Seed cotton yield', u:'kg/acre', s:'finp', dp:1, max:10000 },
+    { k:'y_lint', n:'Lint yield', u:'kg/acre', s:'finp', dp:1, max:10000 },
+  ]},
+  { id:'qsed', name:'Seed', traits:[
+    { k:'seed_len', n:'Seed length', u:'mm', s:'ging', dp:2, max:30 },
+    { k:'seed_wid', n:'Seed width', u:'mm', s:'ging', dp:2, max:30 },
+    { k:'seed_idx', n:'Seed index (100-seed wt)', u:'g', s:'ging', dp:2, max:40 },
+    { k:'oil_pc', n:'Oil content', u:'%', s:'ging', dp:2, max:100 },
+  ]},
+  { id:'qfib', name:'Fibre', traits:[
+    { k:'got', n:'GOT / lint', u:'%', s:'harv', dp:2, max:100 },
+    { k:'staple', n:'Staple length', u:'mm', s:'pick', dp:2, max:60 },
+    { k:'micron', n:'Fineness', u:'micronaire', s:'harv', dp:2, max:12 },
+    { k:'fib_str', n:'Fibre strength', u:'tppsi', s:'harv', dp:2, max:60 },
+    { k:'lint_idx', n:'Lint index', u:'g', s:'harv', dp:2, max:40 },
+    { k:'unif', n:'Uniformity', u:'%', s:'harv', dp:2, max:100 },
+    { k:'spin_idx', n:'Spinning index', u:'index', s:'harv', dp:2, max:400 },
+  ]},
+];
+
+const QUAL_TRAITS  = QUAL_GROUPS.flatMap(g => g.traits.map(t => ({...t, g:g.id, gname:g.name})));
+const QUANT_TRAITS = QUANT_GROUPS.flatMap(g => g.traits.map(t => ({...t, g:g.id, gname:g.name})));
+const QUAL_BY_K  = Object.fromEntries(QUAL_TRAITS.map(t => [t.k, t]));
+const QUANT_BY_K = Object.fromEntries(QUANT_TRAITS.map(t => [t.k, t]));
+
+</script>
+<script>
+
+/* ============================================================
+   STATISTICS ENGINE — dependency free.
+   Conventions follow Singh & Chaudhary (Biometrical Methods),
+   Burton & DeVane (1953), Johnson et al. (1955), Allard (1960),
+   Kempthorne (1957) for line x tester, Benzecri (1979) for MCA.
+   Significance: ** p<0.01, * p<0.05, ns otherwise.
+   ============================================================ */
+const S = (() => {
+  const logGamma = x => {
+    const c=[76.18009172947146,-86.50532032941677,24.01409824083091,
+             -1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];
+    let y=x, t=x+5.5; t-=(x+0.5)*Math.log(t);
+    let s=1.000000000190015;
+    for(let j=0;j<6;j++) s+=c[j]/++y;
+    return -t+Math.log(2.5066282746310005*s/x);
+  };
+  const betacf=(a,b,x)=>{
+    const FPMIN=1e-300, EPS=3e-12;
+    let qab=a+b,qap=a+1,qam=a-1,c=1,d=1-qab*x/qap;
+    if(Math.abs(d)<FPMIN)d=FPMIN; d=1/d; let h=d;
+    for(let m=1;m<=300;m++){
+      const m2=2*m;
+      let aa=m*(b-m)*x/((qam+m2)*(a+m2));
+      d=1+aa*d; if(Math.abs(d)<FPMIN)d=FPMIN;
+      c=1+aa/c;  if(Math.abs(c)<FPMIN)c=FPMIN;
+      d=1/d; h*=d*c;
+      aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));
+      d=1+aa*d; if(Math.abs(d)<FPMIN)d=FPMIN;
+      c=1+aa/c;  if(Math.abs(c)<FPMIN)c=FPMIN;
+      d=1/d; const del=d*c; h*=del;
+      if(Math.abs(del-1)<EPS)break;
+    }
+    return h;
+  };
+  const betai=(a,b,x)=>{
+    if(x<=0)return 0; if(x>=1)return 1;
+    const bt=Math.exp(logGamma(a+b)-logGamma(a)-logGamma(b)+a*Math.log(x)+b*Math.log(1-x));
+    return x<(a+1)/(a+b+2) ? bt*betacf(a,b,x)/a : 1-bt*betacf(b,a,1-x)/b;
+  };
+  const pF=(f,d1,d2)=>(!isFinite(f)||f<=0)?1:betai(d2/2,d1/2,d2/(d2+d1*f));
+  const pT=(t,df)=>df<=0?1:betai(df/2,0.5,df/(df+t*t));
+  const tinv=(alpha,df)=>{ if(df<=0)return NaN; let lo=0,hi=200;
+    for(let i=0;i<200;i++){const m=(lo+hi)/2; (pT(m,df)>alpha)?lo=m:hi=m;} return (lo+hi)/2; };
+  // chi-square upper tail via incomplete gamma
+  const gserln=(a,x)=>{ let ap=a,sum=1/a,del=sum;
+    for(let n=1;n<400;n++){ ap++; del*=x/ap; sum+=del; if(Math.abs(del)<Math.abs(sum)*1e-12)break; }
+    return sum*Math.exp(-x+a*Math.log(x)-logGamma(a)); };
+  const gcf=(a,x)=>{ const FPMIN=1e-300; let b=x+1-a,c=1/FPMIN,d=1/b,h=d;
+    for(let i=1;i<400;i++){ const an=-i*(i-a); b+=2; d=an*d+b; if(Math.abs(d)<FPMIN)d=FPMIN;
+      c=b+an/c; if(Math.abs(c)<FPMIN)c=FPMIN; d=1/d; const del=d*c; h*=del;
+      if(Math.abs(del-1)<1e-12)break; }
+    return Math.exp(-x+a*Math.log(x)-logGamma(a))*h; };
+  const pChi2=(x,df)=>{ if(x<=0||df<=0)return 1; const a=df/2, z=x/2;
+    return z<a+1 ? 1-gserln(a,z) : gcf(a,z); };
+
+  const sum=a=>a.reduce((s,v)=>s+v,0);
+  const mean=a=>sum(a)/a.length;
+  const vari=a=>{ if(a.length<2)return NaN; const m=mean(a); return sum(a.map(v=>(v-m)**2))/(a.length-1); };
+  const sd=a=>Math.sqrt(vari(a));
+
+  function describe(a){
+    const n=a.length; if(!n)return null;
+    const m=mean(a), s=sd(a), srt=[...a].sort((x,y)=>x-y);
+    const m2=sum(a.map(v=>(v-m)**2))/n, m3=sum(a.map(v=>(v-m)**3))/n, m4=sum(a.map(v=>(v-m)**4))/n;
+    // sample (Fisher-Pearson adjusted) skewness and excess kurtosis
+    let skew=NaN, kurt=NaN;
+    if(n>2 && m2>0) skew=(Math.sqrt(n*(n-1))/(n-2))*(m3/Math.pow(m2,1.5));
+    if(n>3 && m2>0) kurt=((n-1)/((n-2)*(n-3)))*((n+1)*(m4/(m2*m2))-3*(n-1));
+    const q=p=>{const i=(n-1)*p,lo=Math.floor(i),hi=Math.ceil(i);return srt[lo]+(srt[hi]-srt[lo])*(i-lo);};
+    return { n, mean:m, sd:s, se:s/Math.sqrt(n), min:srt[0], max:srt[n-1],
+             range:srt[n-1]-srt[0], median:q(.5), cv:(s/m)*100, skew, kurt,
+             seSkew:n>2?Math.sqrt(6*n*(n-1)/((n-2)*(n+1)*(n+3))):NaN };
+  }
+
+  /* ---- ANOVA on plot means: CRD (one-way) or RCBD (two-way) ---- */
+  function anova(rows, design){
+    const vals=rows.map(r=>r.y), N=vals.length;
+    if(N<3)return null;
+    const G=[...new Set(rows.map(r=>r.g))], R=[...new Set(rows.map(r=>r.r))];
+    const t=G.length, b=R.length;
+    if(t<2)return null;
+    const grand=mean(vals), CF=sum(vals)**2/N;
+    const SStot=sum(vals.map(v=>v*v))-CF;
+    const byG={}; G.forEach(g=>byG[g]=[]); rows.forEach(r=>byG[r.g].push(r.y));
+    const SStrt=sum(G.map(g=>sum(byG[g])**2/byG[g].length))-CF;
+    let SSblk=0, dfBlk=0;
+    if(design!=='CRD' && b>1){
+      const byR={}; R.forEach(r=>byR[r]=[]); rows.forEach(r=>byR[r.r].push(r.y));
+      SSblk=sum(R.map(r=>sum(byR[r])**2/byR[r].length))-CF; dfBlk=b-1;
+    }
+    const dfTrt=t-1, dfTot=N-1, dfErr=dfTot-dfTrt-dfBlk;
+    if(dfErr<1)return {insufficient:true,dfErr};
+    const SSerr=SStot-SStrt-SSblk;
+    const MStrt=SStrt/dfTrt, MSerr=SSerr/dfErr, MSblk=dfBlk?SSblk/dfBlk:null;
+    const Ftrt=MStrt/MSerr, Fblk=MSblk!==null?MSblk/MSerr:null;
+    const reps=G.map(g=>byG[g].length);
+    const r=reps.length/sum(reps.map(x=>1/x));
+    const SEd=Math.sqrt(2*MSerr/r);
+    const lsd=a=>tinv(a,dfErr)*SEd;
+    const means=G.map(g=>({g,mean:mean(byG[g]),n:byG[g].length,sd:sd(byG[g])}))
+                 .sort((a,b2)=>b2.mean-a.mean);
+    assignLetters(means,lsd(0.05));
+    const vg=Math.max(0,(MStrt-MSerr)/r), ve=MSerr, vp=vg+ve;
+    const h2=vp>0?vg/vp:0;
+    const GA=2.06*Math.sqrt(vp)*h2;
+    return {
+      design,N,t,b,r,grand,
+      MSblk,MStrt,MSerr,dfBlk,dfTrt,dfErr,dfTot,SSblk,SStrt,SSerr,SStot,
+      Ftrt,Fblk,pTrt:pF(Ftrt,dfTrt,dfErr),pBlk:Fblk!==null?pF(Fblk,dfBlk,dfErr):null,
+      SEd, cv:(Math.sqrt(MSerr)/grand)*100, r2:(SStot-SSerr)/SStot,
+      lsd05:lsd(0.05), lsd01:lsd(0.01), means,
+      vg,ve,vp, gcv:(Math.sqrt(vg)/grand)*100, pcv:(Math.sqrt(vp)/grand)*100,
+      h2, ga:GA, gam:(GA/grand)*100,
+      table:[
+        ...(dfBlk?[{src:'Replication',df:dfBlk,ss:SSblk,ms:MSblk,F:Fblk,p:pF(Fblk,dfBlk,dfErr)}]:[]),
+        {src:'Genotype',df:dfTrt,ss:SStrt,ms:MStrt,F:Ftrt,p:pF(Ftrt,dfTrt,dfErr)},
+        {src:'Error',df:dfErr,ss:SSerr,ms:MSerr},
+        {src:'Total',df:dfTot,ss:SStot}
+      ]
+    };
+  }
+  function assignLetters(sorted,lsd){
+    const n=sorted.length, marks=sorted.map(()=>new Set());
+    const alpha='abcdefghijklmnopqrstuvwxyz'; let letter=0;
+    for(let i=0;i<n;i++){
+      if(marks[i].size)continue;
+      const L=alpha[letter%26]; letter++; marks[i].add(L);
+      for(let j=i+1;j<n;j++){
+        let ok=true;
+        for(let k=i;k<j;k++) if(Math.abs(sorted[k].mean-sorted[j].mean)>lsd) ok=false;
+        if(ok&&Math.abs(sorted[i].mean-sorted[j].mean)<=lsd) marks[j].add(L); else break;
+      }
+    }
+    sorted.forEach((m,i)=>m.letters=[...marks[i]].join(''));
+  }
+
+  /* ---- covariance ANOVA for genotypic / phenotypic / environmental r ---- */
+  function covComponents(rowsX, rowsY, design){
+    const key=o=>o.g+'|'+o.r;
+    const mapY={}; rowsY.forEach(o=>mapY[key(o)]=o.y);
+    const pairs=rowsX.filter(o=>mapY[key(o)]!==undefined)
+                     .map(o=>({g:o.g,r:o.r,x:o.y,y:mapY[key(o)]}));
+    if(pairs.length<4)return null;
+    const N=pairs.length, G=[...new Set(pairs.map(p=>p.g))], R=[...new Set(pairs.map(p=>p.r))];
+    const t=G.length, b=R.length;
+    const CF=sum(pairs.map(p=>p.x))*sum(pairs.map(p=>p.y))/N;
+    const SPtot=sum(pairs.map(p=>p.x*p.y))-CF;
+    const gx={},gy={}; G.forEach(g=>{gx[g]=0;gy[g]=0;});
+    pairs.forEach(p=>{gx[p.g]+=p.x;gy[p.g]+=p.y;});
+    const nG={}; G.forEach(g=>nG[g]=pairs.filter(p=>p.g===g).length);
+    const SPtrt=sum(G.map(g=>gx[g]*gy[g]/nG[g]))-CF;
+    let SPblk=0,dfBlk=0;
+    if(design!=='CRD'&&b>1){
+      const rx={},ry={},nR={}; R.forEach(r=>{rx[r]=0;ry[r]=0;nR[r]=0;});
+      pairs.forEach(p=>{rx[p.r]+=p.x;ry[p.r]+=p.y;nR[p.r]++;});
+      SPblk=sum(R.map(r=>rx[r]*ry[r]/nR[r]))-CF; dfBlk=b-1;
+    }
+    const dfTrt=t-1, dfErr=N-1-dfTrt-dfBlk;
+    if(dfErr<1)return null;
+    const MPtrt=SPtrt/dfTrt, MPerr=(SPtot-SPtrt-SPblk)/dfErr;
+    const r=N/t;
+    const covG=(MPtrt-MPerr)/r, covE=MPerr;
+    return { covG, covE, covP:covG+covE };
+  }
+  function geneticCorrelations(traitRows, design){
+    // traitRows: [{key, rows}] in plot-mean long format
+    const k=traitRows.length;
+    const an=traitRows.map(t=>anova(t.rows,design));
+    const out={rg:[],rp:[],re:[]};
+    for(let i=0;i<k;i++){ out.rg[i]=[]; out.rp[i]=[]; out.re[i]=[]; }
+    for(let i=0;i<k;i++)for(let j=0;j<k;j++){
+      if(i===j){ out.rg[i][j]=1; out.rp[i][j]=1; out.re[i][j]=1; continue; }
+      const A=an[i],B=an[j];
+      if(!A||!B||A.insufficient||B.insufficient){ out.rg[i][j]=null;out.rp[i][j]=null;out.re[i][j]=null; continue; }
+      const c=covComponents(traitRows[i].rows,traitRows[j].rows,design);
+      if(!c){ out.rg[i][j]=null;out.rp[i][j]=null;out.re[i][j]=null; continue; }
+      const dg=Math.sqrt(A.vg*B.vg), dp=Math.sqrt(A.vp*B.vp), de=Math.sqrt(A.ve*B.ve);
+      const cl=v=>v===null?null:Math.max(-1.2,Math.min(1.2,v));
+      out.rg[i][j]=dg>0?cl(c.covG/dg):null;
+      out.rp[i][j]=dp>0?cl(c.covP/dp):null;
+      out.re[i][j]=de>0?cl(c.covE/de):null;
+    }
+    return out;
+  }
+
+  function pearson(x,y){
+    const n=x.length; if(n<3)return null;
+    const mx=mean(x),my=mean(y); let sxy=0,sxx=0,syy=0;
+    for(let i=0;i<n;i++){const a=x[i]-mx,b=y[i]-my;sxy+=a*b;sxx+=a*a;syy+=b*b;}
+    if(sxx===0||syy===0)return null;
+    const r=sxy/Math.sqrt(sxx*syy), df=n-2;
+    const t=Math.abs(r)>=1?Infinity:r*Math.sqrt(df/(1-r*r));
+    return {r,n,p:pT(Math.abs(t),df)};
+  }
+
+  /* ---- linear algebra ---- */
+  function inverse(M){
+    const n=M.length;
+    const A=M.map((r,i)=>[...r,...Array.from({length:n},(_,j)=>i===j?1:0)]);
+    for(let c=0;c<n;c++){
+      let piv=c;
+      for(let r2=c+1;r2<n;r2++) if(Math.abs(A[r2][c])>Math.abs(A[piv][c])) piv=r2;
+      if(Math.abs(A[piv][c])<1e-12) return null;
+      [A[c],A[piv]]=[A[piv],A[c]];
+      const d=A[c][c];
+      for(let j=0;j<2*n;j++) A[c][j]/=d;
+      for(let r2=0;r2<n;r2++){ if(r2===c)continue; const f=A[r2][c];
+        if(f) for(let j=0;j<2*n;j++) A[r2][j]-=f*A[c][j]; }
+    }
+    return A.map(r=>r.slice(n));
+  }
+  function jacobi(Ain,iters=160){
+    const n=Ain.length, A=Ain.map(r=>r.slice());
+    let V=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>i===j?1:0));
+    for(let sweep=0;sweep<iters;sweep++){
+      let off=0;
+      for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)off+=A[i][j]**2;
+      if(off<1e-16)break;
+      for(let p=0;p<n-1;p++)for(let q=p+1;q<n;q++){
+        if(Math.abs(A[p][q])<1e-18)continue;
+        const theta=(A[q][q]-A[p][p])/(2*A[p][q]);
+        const t=Math.sign(theta||1)/(Math.abs(theta)+Math.sqrt(theta*theta+1));
+        const c=1/Math.sqrt(t*t+1), s=t*c;
+        for(let k=0;k<n;k++){const a=A[k][p],b=A[k][q];A[k][p]=c*a-s*b;A[k][q]=s*a+c*b;}
+        for(let k=0;k<n;k++){const a=A[p][k],b=A[q][k];A[p][k]=c*a-s*b;A[q][k]=s*a+c*b;}
+        for(let k=0;k<n;k++){const a=V[k][p],b=V[k][q];V[k][p]=c*a-s*b;V[k][q]=s*a+c*b;}
+      }
+    }
+    return A.map((r,i)=>({val:r[i],vec:V.map(row=>row[i])})).sort((a,b)=>b.val-a.val);
+  }
+
+  function pca(matrix, labels, traitNames){
+    const n=matrix.length, p=matrix[0].length;
+    if(n<3||p<2)return null;
+    const mu=[],sg=[];
+    for(let j=0;j<p;j++){ const col=matrix.map(r=>r[j]); mu[j]=mean(col); sg[j]=sd(col)||1; }
+    const Z=matrix.map(r=>r.map((v,j)=>(v-mu[j])/sg[j]));
+    const C=Array.from({length:p},()=>new Array(p).fill(0));
+    for(let i=0;i<p;i++)for(let j=0;j<p;j++){
+      let s=0; for(let k=0;k<n;k++)s+=Z[k][i]*Z[k][j]; C[i][j]=s/(n-1);
+    }
+    const eig=jacobi(C).filter(e=>isFinite(e.val));
+    const total=sum(eig.map(e=>Math.max(e.val,0)))||1;
+    const comps=eig.map((e,i)=>({pc:i+1,eigen:Math.max(e.val,0),pct:Math.max(e.val,0)/total*100,vec:e.vec}));
+    let cum=0; comps.forEach(c=>{cum+=c.pct;c.cum=cum;});
+    const nc=Math.min(comps.length,5);
+    const scores=Z.map((row,i)=>{
+      const o={label:labels[i]};
+      for(let c=0;c<nc;c++) o['PC'+(c+1)]=sum(row.map((v,j)=>v*comps[c].vec[j]));
+      o.x=o.PC1; o.y=o.PC2??0; return o;
+    });
+    const loadings=traitNames.map((nm,j)=>{
+      const o={name:nm};
+      for(let c=0;c<nc;c++) o['PC'+(c+1)]=comps[c].vec[j];
+      o.x=comps[0].vec[j]*Math.sqrt(comps[0].eigen);
+      o.y=comps[1]?comps[1].vec[j]*Math.sqrt(comps[1].eigen):0;
+      return o;
+    });
+    return {comps,scores,loadings,n,p,Z};
+  }
+
+  /* ---- path coefficient analysis: P = R^-1 r ---- */
+  function path(Rmat, rY, names){
+    const inv=inverse(Rmat);
+    if(!inv)return null;
+    const k=Rmat.length;
+    const direct=inv.map(row=>sum(row.map((v,j)=>v*rY[j])));
+    const indirect=names.map((_,i)=>names.map((_,j)=>i===j?null:Rmat[i][j]*direct[j]));
+    const R2=sum(direct.map((d,i)=>d*rY[i]));
+    return { direct, indirect, R2, residual:Math.sqrt(Math.max(0,1-R2)), names };
+  }
+
+  /* ---- distance + clustering ---- */
+  function euclidean(matrix){
+    const n=matrix.length, D=Array.from({length:n},()=>new Array(n).fill(0));
+    for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+      let s=0; for(let k=0;k<matrix[i].length;k++) s+=(matrix[i][k]-matrix[j][k])**2;
+      D[i][j]=D[j][i]=Math.sqrt(s);
+    }
+    return D;
+  }
+  function standardise(matrix){
+    const p=matrix[0].length, mu=[],sg=[];
+    for(let j=0;j<p;j++){const col=matrix.map(r=>r[j]); mu[j]=mean(col); sg[j]=sd(col)||1;}
+    return matrix.map(r=>r.map((v,j)=>(v-mu[j])/sg[j]));
+  }
+  // agglomerative clustering: 'upgma' (average) or 'ward'
+  function cluster(D, labels, method='upgma'){
+    const n=D.length;
+    let clusters=labels.map((l,i)=>({id:i,members:[i],label:l,height:0,children:null}));
+    const dist={}; const key=(a,b)=>a<b?a+'_'+b:b+'_'+a;
+    for(let i=0;i<n;i++)for(let j=i+1;j<n;j++) dist[key(i,j)]=D[i][j];
+    const merges=[]; let next=n;
+    const act=()=>clusters.filter(c=>c);
+    while(act().length>1){
+      const a=act(); let bi=null,bj=null,bd=Infinity;
+      for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++){
+        const d=dist[key(a[i].id,a[j].id)];
+        if(d<bd){bd=d;bi=a[i];bj=a[j];}
+      }
+      const merged={id:next++,members:[...bi.members,...bj.members],
+                    height:bd,children:[bi,bj],label:null};
+      merges.push({a:bi,b:bj,height:bd,size:merged.members.length});
+      act().forEach(c=>{
+        if(c===bi||c===bj)return;
+        const da=dist[key(bi.id,c.id)], db=dist[key(bj.id,c.id)];
+        let d;
+        if(method==='ward'){
+          const ni=bi.members.length, nj=bj.members.length, nk=c.members.length;
+          d=Math.sqrt(((ni+nk)*da*da+(nj+nk)*db*db-nk*bd*bd)/(ni+nj+nk));
+        } else {
+          d=(da*bi.members.length+db*bj.members.length)/(bi.members.length+bj.members.length);
+        }
+        dist[key(merged.id,c.id)]=d;
+      });
+      clusters=clusters.filter(c=>c&&c!==bi&&c!==bj); clusters.push(merged);
+    }
+    const root=clusters[clusters.length-1];
+    const cut=k=>{
+      let nodes=[root];
+      while(nodes.length<k){
+        nodes.sort((x,y)=>y.height-x.height);
+        const t=nodes.shift();
+        if(!t.children){nodes.push(t);break;}
+        nodes.push(...t.children);
+      }
+      const assign=new Array(n).fill(1);
+      nodes.sort((x,y)=>Math.min(...x.members)-Math.min(...y.members));
+      nodes.forEach((nd,i)=>nd.members.forEach(m=>assign[m]=i+1));
+      return assign;
+    };
+    return {root,merges,cut};
+  }
+  function clusterAgreement(a,b){
+    const n=a.length; let same=0,tot=0;
+    for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+      tot++; if((a[i]===a[j])===(b[i]===b[j])) same++;
+    }
+    return tot?same/tot*100:0;
+  }
+
+  /* ---- Mantel test between two distance matrices ---- */
+  function mantel(D1,D2,perms=9999){
+    const n=D1.length, a=[],b=[];
+    for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){a.push(D1[i][j]);b.push(D2[i][j]);}
+    const obs=pearson(a,b); if(!obs)return null;
+    let ge=0;
+    const idx=Array.from({length:n},(_,i)=>i);
+    for(let p=0;p<perms;p++){
+      for(let i=n-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[idx[i],idx[j]]=[idx[j],idx[i]];}
+      const pa=[];
+      for(let i=0;i<n;i++)for(let j=i+1;j<n;j++) pa.push(D1[idx[i]][idx[j]]);
+      const r=pearson(pa,b);
+      if(r&&Math.abs(r.r)>=Math.abs(obs.r)) ge++;
+    }
+    return { r:obs.r, p:(ge+1)/(perms+1), shared:obs.r*obs.r*100, perms };
+  }
+
+  /* ---- qualitative diversity ---- */
+  function shannon(counts){
+    const tot=sum(counts); if(!tot)return 0;
+    return -sum(counts.filter(c=>c>0).map(c=>{const p=c/tot;return p*Math.log(p);}));
+  }
+  function cramersV(table){
+    // table: rows x cols of counts
+    const R=table.length, C=table[0].length;
+    const rowT=table.map(r=>sum(r)), colT=[];
+    for(let j=0;j<C;j++) colT[j]=sum(table.map(r=>r[j]));
+    const N=sum(rowT); if(!N)return null;
+    let chi=0;
+    for(let i=0;i<R;i++)for(let j=0;j<C;j++){
+      const e=rowT[i]*colT[j]/N;
+      if(e>0) chi+=(table[i][j]-e)**2/e;
+    }
+    const df=(R-1)*(C-1);
+    const k=Math.min(R,C);
+    return { chi2:chi, df, p:pChi2(chi,df), v:k>1?Math.sqrt(chi/(N*(k-1))):0 };
+  }
+
+  /* ---- Multiple Correspondence Analysis with Benzecri correction ---- */
+  function mca(rows, varNames){
+    // rows: array of arrays of category labels (one per variable), one row per plant
+    const n=rows.length, Q=varNames.length;
+    const cats=[]; // {var, state}
+    varNames.forEach((v,j)=>{
+      [...new Set(rows.map(r=>r[j]))].filter(x=>x!==undefined&&x!==null&&x!=='')
+        .sort().forEach(st=>cats.push({v,state:st,j}));
+    });
+    const J=cats.length; if(J<=Q||n<3)return null;
+    const Zm=rows.map(r=>cats.map(c=>r[c.j]===c.state?1:0));
+    const total=n*Q;
+    const P=Zm.map(r=>r.map(v=>v/total));
+    const rMass=P.map(r=>sum(r));               // = 1/n each
+    const cMass=cats.map((_,j)=>sum(P.map(r=>r[j])));
+    // standardised residual matrix
+    const Sres=P.map((row,i)=>row.map((v,j)=>
+      (v-rMass[i]*cMass[j])/Math.sqrt(rMass[i]*cMass[j]||1e-12)));
+    // eigen of S'S (J x J)
+    const SS=Array.from({length:J},()=>new Array(J).fill(0));
+    for(let a=0;a<J;a++)for(let b=a;b<J;b++){
+      let s=0; for(let i=0;i<n;i++) s+=Sres[i][a]*Sres[i][b];
+      SS[a][b]=SS[b][a]=s;
+    }
+    const eig=jacobi(SS).filter(e=>e.val>1e-10).slice(0,8);
+    const rawTotal=sum(eig.map(e=>e.val))||1;
+    // Benzecri adjustment
+    const thr=1/Q;
+    const adj=eig.map(e=>e.val>thr ? Math.pow(Q/(Q-1),2)*Math.pow(e.val-thr,2) : 0);
+    const adjTotal=sum(adj)||1;
+    let cumA=0;
+    const comps=eig.map((e,i)=>{
+      const pctA=adj[i]/adjTotal*100; cumA+=pctA;
+      return { dim:i+1, eigen:e.val, rawPct:e.val/rawTotal*100,
+               adjPct:pctA, cumAdj:cumA, vec:e.vec };
+    });
+    const nd=Math.min(4,comps.length);
+    // category coordinates (principal)
+    const catCoords=cats.map((c,j)=>{
+      const o={trait:c.v,state:c.state};
+      for(let d=0;d<nd;d++){
+        const lam=comps[d].eigen;
+        o['Dim'+(d+1)]=comps[d].vec[j]/Math.sqrt(cMass[j]||1e-12)*Math.sqrt(lam);
+        o['contrib'+(d+1)]=comps[d].vec[j]*comps[d].vec[j]*100;
+      }
+      return o;
+    });
+    // row (plant) coordinates, then group means supplied by caller
+    const rowCoords=Sres.map((row,i)=>{
+      const o={};
+      for(let d=0;d<nd;d++){
+        const lam=comps[d].eigen;
+        o['Dim'+(d+1)]=sum(row.map((v,j)=>v*comps[d].vec[j]))/Math.sqrt(rMass[i]||1e-12)/Math.sqrt(lam||1e-12);
+      }
+      return o;
+    });
+    return { comps, catCoords, rowCoords, cats, nd, Q, n };
+  }
+
+  /* ---- Line x Tester (Kempthorne 1957) ---- */
+  function lineTester(records, design){
+    // records: [{line, tester, r, y}] crosses only
+    const L=[...new Set(records.map(d=>d.line))], T=[...new Set(records.map(d=>d.tester))];
+    const R=[...new Set(records.map(d=>d.r))];
+    const l=L.length, t=T.length, r=R.length;
+    if(l<2||t<2||records.length<l*t)return null;
+    const y=records.map(d=>d.y), N=y.length;
+    const CF=sum(y)**2/N, SStot=sum(y.map(v=>v*v))-CF;
+    const cellKey=d=>d.line+'|'+d.tester;
+    const cells={}; records.forEach(d=>{(cells[cellKey(d)]=cells[cellKey(d)]||[]).push(d.y);});
+    const SScross=sum(Object.values(cells).map(a=>sum(a)**2/a.length))-CF;
+    let SSrep=0,dfRep=0;
+    if(design!=='CRD'){
+      const byR={}; R.forEach(x=>byR[x]=[]); records.forEach(d=>byR[d.r].push(d.y));
+      SSrep=sum(R.map(x=>sum(byR[x])**2/byR[x].length))-CF; dfRep=r-1;
+    }
+    const dfCross=Object.keys(cells).length-1;
+    const dfErr=N-1-dfCross-dfRep;
+    if(dfErr<1)return null;
+    const SSerr=SStot-SScross-SSrep, MSerr=SSerr/dfErr;
+    const lineT={},testT={};
+    L.forEach(x=>lineT[x]=[]); T.forEach(x=>testT[x]=[]);
+    records.forEach(d=>{lineT[d.line].push(d.y);testT[d.tester].push(d.y);});
+    const SSl=sum(L.map(x=>sum(lineT[x])**2/lineT[x].length))-CF;
+    const SSt=sum(T.map(x=>sum(testT[x])**2/testT[x].length))-CF;
+    const SSlt=SScross-SSl-SSt;
+    const dfL=l-1, dfT=t-1, dfLT=dfL*dfT;
+    const MSl=SSl/dfL, MSt=SSt/dfT, MSlt=SSlt/dfLT, MScross=SScross/dfCross;
+    const grand=mean(y);
+    const gcaLines=L.map(x=>({name:x, effect:mean(lineT[x])-grand,
+      se:Math.sqrt(MSerr/(r*t)), n:lineT[x].length}));
+    const gcaTesters=T.map(x=>({name:x, effect:mean(testT[x])-grand,
+      se:Math.sqrt(MSerr/(r*l)), n:testT[x].length}));
+    const sca=[];
+    L.forEach(li=>T.forEach(te=>{
+      const c=cells[li+'|'+te]; if(!c)return;
+      const gi=mean(lineT[li])-grand, gj=mean(testT[te])-grand;
+      sca.push({line:li,tester:te,mean:mean(c),effect:mean(c)-grand-gi-gj,
+                se:Math.sqrt(MSerr/r)});
+    }));
+    const covHSline=(MSl-MSlt)/(r*t), covHStester=(MSt-MSlt)/(r*l);
+    const varGCA=(covHSline+covHStester)/2;
+    const varSCA=(MSlt-MSerr)/r;
+    const varA=2*Math.max(0,varGCA);          // F = 1, inbred parents
+    const varD=Math.max(0,varSCA);
+    const varP=varA+varD+MSerr;
+    return {
+      grand, l,t,r, MSerr, dfErr,
+      table:[
+        ...(dfRep?[{src:'Replication',df:dfRep,ss:SSrep,ms:SSrep/dfRep,F:(SSrep/dfRep)/MSerr,p:pF((SSrep/dfRep)/MSerr,dfRep,dfErr)}]:[]),
+        {src:'Crosses',df:dfCross,ss:SScross,ms:MScross,F:MScross/MSerr,p:pF(MScross/MSerr,dfCross,dfErr)},
+        {src:'Lines',df:dfL,ss:SSl,ms:MSl,F:MSl/MSlt,p:pF(MSl/MSlt,dfL,dfLT)},
+        {src:'Testers',df:dfT,ss:SSt,ms:MSt,F:MSt/MSlt,p:pF(MSt/MSlt,dfT,dfLT)},
+        {src:'Line x Tester',df:dfLT,ss:SSlt,ms:MSlt,F:MSlt/MSerr,p:pF(MSlt/MSerr,dfLT,dfErr)},
+        {src:'Error',df:dfErr,ss:SSerr,ms:MSerr},
+        {src:'Total',df:N-1,ss:SStot}
+      ],
+      gcaLines, gcaTesters, sca,
+      varGCA:Math.max(0,varGCA), varSCA:varD, varA, varD, varP,
+      ratio: varD>0?Math.max(0,varGCA)/varD:null,
+      degreeDominance: varA>0?Math.sqrt(2*varD/varA):null,
+      h2n: varP>0?varA/varP:null,
+      h2b: varP>0?(varA+varD)/varP:null,
+      contribLines:SSl/SScross*100, contribTesters:SSt/SScross*100, contribLT:SSlt/SScross*100
+    };
+  }
+
+  return { mean, sd, sum, describe, anova, assignLetters, pearson, pca, path,
+           geneticCorrelations, covComponents, euclidean, standardise, cluster,
+           clusterAgreement, mantel, shannon, cramersV, mca, lineTester,
+           inverse, jacobi, pF, pT, pChi2, tinv };
+})();
+
+/* significance: ** 1%, * 5%, ns */
+const stars = p => (p===null||p===undefined||!isFinite(p)) ? ''
+  : p<0.01 ? '**' : p<0.05 ? '*' : 'ns';
+const sigWord = p => (p===null||p===undefined||!isFinite(p)) ? ''
+  : p<0.05 ? 'Significant' : 'Non-significant';
+const fmt = (v,dp=2) => (v===null||v===undefined||!isFinite(v)) ? '—'
+  : Math.abs(v)>=1e6 ? v.toExponential(2) : v.toFixed(dp);
+const pStr = p => (p===null||p===undefined||!isFinite(p)) ? '—'
+  : p<0.001 ? '<0.001' : p.toFixed(4);
+
+</script>
+<script>
+
+/* ============================================================
+   MODEL + STORAGE
+   ============================================================ */
+const KEY='cottonbook.v4';
+let DB={projects:[],activeId:null};
+let VIEW={screen:'home',tab:'quant',entry:null,rep:1,sel:new Set(),results:null,dep:null};
+let saveState='saved',saveAt=null,saveTimer=null;
+
+const uid=()=>Math.random().toString(36).slice(2,9);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=s=>document.querySelector(s);
+const $$=s=>Array.from(document.querySelectorAll(s));
+
+function load(){ try{const r=localStorage.getItem(KEY); if(r)DB=JSON.parse(r);}catch(e){} }
+function persist(){
+  saveState='saving'; paintSave(); clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{ try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){}
+    saveState='saved'; saveAt=new Date(); paintSave(); },400);
+}
+function paintSave(){
+  const el=$('#saveflag'); if(!el)return;
+  el.dataset.state=saveState==='saving'?'saving':'saved';
+  const t=saveAt?saveAt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';
+  el.innerHTML=`<span class="dot"></span>${saveState==='saving'?'Saving…':'Saved '+t}`;
+}
+const active=()=>DB.projects.find(p=>p.id===DB.activeId)||null;
+
+/* ---- trait resolution: built-in + custom, with optional user codes ---- */
+function allQualTraits(p){ return [...QUAL_TRAITS, ...((p&&p.custom&&p.custom.qual)||[])]; }
+function allQuantTraits(p){ return [...QUANT_TRAITS, ...((p&&p.custom&&p.custom.quant)||[])]; }
+function qualGroups(p){
+  const cs=(p.custom&&p.custom.qual)||[];
+  const extra=cs.length?[{id:'cq',name:'Custom descriptors',traits:cs}]:[];
+  return [...QUAL_GROUPS,...extra];
+}
+function quantGroups(p){
+  const cs=(p.custom&&p.custom.quant)||[];
+  const extra=cs.length?[{id:'cm',name:'Custom traits',traits:cs}]:[];
+  return [...QUANT_GROUPS,...extra];
+}
+function scope(p){
+  if(!p.traits) p.traits={qual:allQualTraits(p).map(t=>t.k),quant:allQuantTraits(p).map(t=>t.k)};
+  return {Q:new Set(p.traits.qual),M:new Set(p.traits.quant)};
+}
+const scopedQual =p=>{const s=scope(p);return allQualTraits(p).filter(t=>s.Q.has(t.k));};
+const scopedQuant=p=>{const s=scope(p);return allQuantTraits(p).filter(t=>s.M.has(t.k));};
+const codeOf =(p,t)=>(p.codes&&p.codes[t.k])||'';
+const labelOf=(p,t)=>codeOf(p,t)||t.n;
+const groupOf=(p,t)=>(p.groups&&p.groups[t.k])||t.grp||'';
+
+/* ---- entries: genotypes, or the line x tester entry list ---- */
+function buildEntries(cfg){
+  if(cfg.design!=='LT'){
+    return cfg.names.map((n,i)=>({id:'e'+(i+1),code:'G'+(i+1),
+      name:(n||'').trim()||('Genotype '+(i+1)),type:'genotype'}));
+  }
+  const out=[]; let i=1;
+  cfg.lines.forEach(L=>cfg.testers.forEach(T=>{
+    out.push({id:'e'+(i),code:'C'+i,name:L+' × '+T,type:'cross',line:L,tester:T}); i++;
+  }));
+  if(cfg.includeParents){
+    cfg.lines.forEach(L=>{ out.push({id:'e'+i,code:'L'+i,name:L,type:'line',line:L}); i++; });
+    cfg.testers.forEach(T=>{ out.push({id:'e'+i,code:'T'+i,name:T,type:'tester',tester:T}); i++; });
+  }
+  (cfg.checks||[]).filter(Boolean).forEach(c=>{ out.push({id:'e'+i,code:'K'+i,name:c,type:'check'}); i++; });
+  return out;
+}
+function newProject(cfg){
+  const entries=buildEntries(cfg);
+  const p={ id:uid(), name:cfg.name, crop:'Cotton (Gossypium L.)',
+    season:cfg.season, site:cfg.site, investigator:cfg.investigator,
+    design:cfg.design, reps:cfg.reps, plants:cfg.plantMode==='single'?1:cfg.plants,
+    plantMode:cfg.plantMode, entries,
+    lines:cfg.lines||null, testers:cfg.testers||null,
+    includeParents:!!cfg.includeParents, checks:cfg.checks||[],
+    traits:{qual:[...(cfg.selQ||[])],quant:[...(cfg.selM||[])]},
+    custom:cfg.custom?{qual:[...(cfg.custom.qual||[])],quant:[...(cfg.custom.quant||[])]}:{qual:[],quant:[]},
+    codes:{...(cfg.codes||{})}, groups:{...(cfg.groups||{})},
+    data:{}, created:Date.now(), updated:Date.now() };
+  DB.projects.unshift(p); DB.activeId=p.id; persist();
+  return p;
+}
+function cell(p,eid,rep,plant){
+  p.data[eid]=p.data[eid]||{};
+  p.data[eid][rep]=p.data[eid][rep]||{};
+  p.data[eid][rep][plant]=p.data[eid][rep][plant]||{qual:{},quant:{}};
+  return p.data[eid][rep][plant];
+}
+const filled=v=>v!==undefined&&v!==null&&v!=='';
+
+/* ---- derived values ---- */
+function plotMean(p,eid,rep,k){
+  const vals=[];
+  for(let pl=1;pl<=p.plants;pl++){
+    const v=cell(p,eid,rep,pl).quant[k];
+    if(filled(v)&&isFinite(+v)) vals.push(+v);
+  }
+  return vals.length?S.mean(vals):null;
+}
+function plotValues(p,eid,rep,k){
+  const vals=[];
+  for(let pl=1;pl<=p.plants;pl++){
+    const v=cell(p,eid,rep,pl).quant[k];
+    if(filled(v)&&isFinite(+v)) vals.push(+v);
+  }
+  return vals;
+}
+function entryMean(p,eid,k){
+  const vals=[];
+  for(let r=1;r<=p.reps;r++){ const m=plotMean(p,eid,r,k); if(m!==null) vals.push(m); }
+  return vals.length?S.mean(vals):null;
+}
+/* plot-mean long format for ANOVA */
+function obs(p,k,onlyType){
+  const rows=[];
+  p.entries.forEach(e=>{
+    if(onlyType && e.type!==onlyType) return;
+    for(let r=1;r<=p.reps;r++){
+      const m=plotMean(p,e.id,r,k);
+      if(m!==null) rows.push({g:e.id,r,y:m,line:e.line,tester:e.tester});
+    }
+  });
+  return rows;
+}
+function analysableQuant(p){
+  return scopedQuant(p).filter(t=>{
+    const rows=obs(p,t.k);
+    return rows.length>=4 && new Set(rows.map(r=>r.g)).size>=2;
+  });
+}
+/* qualitative plant records */
+function qualRecords(p,k){
+  const out=[];
+  p.entries.forEach(e=>{ for(let r=1;r<=p.reps;r++){ for(let pl=1;pl<=p.plants;pl++){
+    const v=cell(p,e.id,r,pl).qual[k];
+    if(filled(v)) out.push({entry:e,rep:r,plant:pl,v});
+  }}});
+  return out;
+}
+function analysableQual(p){
+  return scopedQual(p).filter(t=>qualRecords(p,t.k).length>=p.entries.length);
+}
+function unitProgress(p,eid,rep,plant){
+  const c=cell(p,eid,rep,plant), sc=scope(p);
+  const q=[...sc.Q].filter(k=>filled(c.qual[k])).length;
+  const m=[...sc.M].filter(k=>filled(c.quant[k])).length;
+  const total=sc.Q.size+sc.M.size;
+  return {done:q+m,total,pct:total?(q+m)/total:0};
+}
+function repProgress(p,eid,rep){
+  let d=0,t=0;
+  for(let pl=1;pl<=p.plants;pl++){const u=unitProgress(p,eid,rep,pl);d+=u.done;t+=u.total;}
+  return {done:d,total:t,pct:t?d/t:0};
+}
+function projectProgress(p){
+  let d=0,t=0;
+  p.entries.forEach(e=>{for(let r=1;r<=p.reps;r++){const x=repProgress(p,e.id,r);d+=x.done;t+=x.total;}});
+  return {done:d,total:t,pct:t?d/t:0};
+}
+
+/* ============================================================
+   ICONS + CHROME
+   ============================================================ */
+function icon(n,s=16){
+  const P={plus:'M8 3v10M3 8h10',grid:'M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z',
+    pen:'M11 2.5l2.5 2.5L6 12.5 3 13l.5-3z',table:'M2.5 3.5h11v9h-11zM2.5 7h11M6.5 3.5v9',
+    chart:'M3 13V7M7 13V3M11 13V9',down:'M8 3v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10',
+    back:'M10 3L5 8l5 5',check:'M3.5 8.5l3 3 6-7',trash:'M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8',
+    cog:'M8 10.2a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM8 2v1.6M8 12.4V14M14 8h-1.6M3.6 8H2M12.2 3.8l-1.1 1.1M4.9 11.1l-1.1 1.1M12.2 12.2l-1.1-1.1M4.9 4.9L3.8 3.8',
+    copy:'M5.5 5.5h7v7h-7zM3.5 10.5v-7h7',play:'M5 3l8 5-8 5z'};
+  return `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+    stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${P[n]||''}"/></svg>`;
+}
+function toast(m){
+  let el=$('#toast');
+  if(!el){el=document.createElement('div');el.id='toast';el.className='toast';document.body.appendChild(el);}
+  el.innerHTML=`${icon('check')}<span>${esc(m)}</span>`;
+  clearTimeout(window._tt); window._tt=setTimeout(()=>el.remove(),2800);
+}
+function confirmDialog(title,msg,label,onYes){
+  const s=document.createElement('div'); s.className='scrim'; s.id='scrim3';
+  s.innerHTML=`<div class="modal" style="width:min(440px,100%)">
+    <div class="modal-head"><div style="flex:1"><h2 class="t-title">${esc(title)}</h2>
+      <p class="t-small" style="margin-top:6px">${esc(msg)}</p></div></div>
+    <div class="modal-foot" style="justify-content:flex-end">
+      <button class="btn" data-c="no">Cancel</button>
+      <button class="btn" data-c="yes" style="background:var(--flag);border-color:var(--flag);color:#fff">${esc(label)}</button>
+    </div></div>`;
+  document.body.appendChild(s);
+  s.addEventListener('click',e=>{const b=e.target.closest('[data-c]');
+    if(!b){if(e.target===s)s.remove();return;} s.remove(); if(b.dataset.c==='yes')onYes();});
+}
+const DESIGN_NAME={CRD:'CRD',RCBD:'RCBD',LT:'Line × Tester'};
+
+function topbar(){
+  const p=active();
+  return `<header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fff"
+        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13 3C7 3 3.5 5.5 3.5 10c0 1 .2 1.9.6 2.6C5.5 9 8 7 12 6.2 8.6 7.8 6 10.4 5 13.5"/></svg></span>
+      <span class="brand-name">CottonBook</span><span class="brand-sub">FSC&amp;RD descriptor</span>
+    </div>
+    <div class="topbar-mid">${p?`<span class="t-small" style="color:var(--ink-3)">/</span>
+      <strong class="t-sh">${esc(p.name)}</strong>
+      <span class="pill pill-plain">${DESIGN_NAME[p.design]} · ${p.entries.length} entries · ${p.reps} reps · ${p.plants} plant${p.plants>1?'s':''}/plot</span>`:''}</div>
+    <div class="topbar-end">${p?`<span class="save" id="saveflag" data-state="saved"><span class="dot"></span>Saved</span>`:''}</div>
+  </header>`;
+}
+function rail(){
+  const p=active(); if(!p)return '';
+  const pr=projectProgress(p), sc=scope(p);
+  const nav=[['overview','Overview','grid'],['record','Record data','pen'],
+             ['traits','Traits','cog'],['analysis','Analysis','chart'],['export','Export','down']];
+  return `<nav class="rail">
+    <button class="rail-item" data-act="home">${icon('back')}All trials</button>
+    <div class="rail-group">EXPERIMENT</div>
+    ${nav.map(([k,l,i])=>`<button class="rail-item" data-act="go" data-screen="${k}" aria-current="${VIEW.screen===k}">
+      ${icon(i)}${l}${k==='record'?`<span class="rail-count">${Math.round(pr.pct*100)}%</span>`:
+        k==='traits'?`<span class="rail-count">${sc.Q.size+sc.M.size}</span>`:''}</button>`).join('')}
+    <div class="rail-group">ENTRIES</div>
+    <div style="padding:0 8px 8px">
+      ${p.entries.slice(0,16).map(e=>{
+        let d=0,t=0; for(let r=1;r<=p.reps;r++){const x=repProgress(p,e.id,r);d+=x.done;t+=x.total;}
+        const pc=t?d/t:0;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px">
+          <span class="num" style="font-size:11px;color:var(--ink-3);width:28px">${e.code}</span>
+          <span class="t-meta" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)">${esc(e.name)}</span>
+          <span class="bar ${pc>0&&pc<1?'partial':''}" style="width:38px"><i style="width:${Math.round(pc*100)}%"></i></span>
+        </div>`;}).join('')}
+      ${p.entries.length>16?`<div class="t-meta" style="padding:4px 2px">+ ${p.entries.length-16} more</div>`:''}
+    </div></nav>`;
+}
+
+/* ============================================================
+   HOME
+   ============================================================ */
+function screenHome(){
+  const ps=DB.projects;
+  return `<div class="page">
+    <div class="page-head"><div>
+      <h1 class="t-display">Trials</h1>
+      <p class="page-sub">Record cotton traits plant by plant, then run the full analysis on the same data
+      and export a supplementary workbook that is ready to attach to a manuscript.</p>
+      <p class="byline"><strong>Muhammad Faisal Haqani</strong><br>Masters in Plant Breeding and Genetics</p>
+    </div></div><div class="hr"></div>
+    ${ps.length===0?`<div class="empty"><h3>No trials yet</h3>
+      <p>Start a trial, choose your plant structure and design, pick your traits, and the sheet is ready.</p>
+      <button class="btn btn-primary btn-lg" data-act="new">${icon('plus')}New trial</button>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-sm" data-act="example">Load an example trial</button>
+        <button class="btn btn-sm" data-act="cbk-open">Open a trial file</button></div>
+      <p class="t-meta" style="margin-top:8px">10 breeding lines, 3 replications, 5 plants per plot, 38 traits, fully recorded. Delete it whenever you like.</p>
+      </div>`:`
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn btn-sm" data-act="cbk-open">Open a trial file</button>
+      <button class="btn btn-sm" data-act="cbk-all">Back up every trial</button></div>
+    <div class="tiles">
+      <button class="tile tile-new" data-act="new">${icon('plus',22)}<span class="t-sh">New trial</span>
+        <span class="t-meta">CRD · RCBD · Line × Tester</span></button>
+      <button class="tile tile-new" data-act="example" style="min-height:0">
+        <span class="t-sh">Example trial</span>
+        <span class="t-meta">10 lines · 3 reps · 5 plants · 38 traits</span></button>
+      ${ps.map(p=>{const pr=projectProgress(p);
+        return `<div class="tile"><div>
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+            <h3 class="t-title" style="font-size:17px">${esc(p.name)}</h3>
+            <span class="pill ${pr.pct>=1?'pill-leaf':'pill-amber'}">${pr.pct>=1?'Complete':Math.round(pr.pct*100)+'%'}</span></div>
+          <div class="t-meta" style="margin-top:4px">${esc(p.site||'Site not set')} · ${esc(p.season||'Season not set')}</div></div>
+        <span class="bar ${pr.pct>0&&pr.pct<1?'partial':''}"><i style="width:${Math.round(pr.pct*100)}%"></i></span>
+        <div class="tile-stats">
+          <div><div class="stat-k">${DESIGN_NAME[p.design]}</div><div class="stat-l">Design</div></div>
+          <div><div class="stat-k">${p.entries.length}</div><div class="stat-l">Entries</div></div>
+          <div><div class="stat-k">${p.reps}</div><div class="stat-l">Reps</div></div>
+          <div><div class="stat-k">${p.plants}</div><div class="stat-l">Plants/plot</div></div></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" data-act="open" data-id="${p.id}">Open</button>
+          <button class="btn btn-sm btn-danger" data-act="del" data-id="${p.id}">${icon('trash',14)}</button>
+        </div></div>`;}).join('')}
+    </div>`}</div>`;
+}
+
+/* ============================================================
+   NEW TRIAL WIZARD — 5 steps
+   1 details · 2 plant structure · 3 design · 4 traits · 5 entries
+   ============================================================ */
+let wiz=null;
+function openWizard(){
+  wiz={ step:1, name:'', season:'Kharif '+new Date().getFullYear(), site:'', investigator:'',
+        plantMode:'multi', plants:10, design:'RCBD', reps:3, count:8, names:[],
+        lines:['',''], testers:['',''], includeParents:false, checks:[],
+        Q:new Set(), M:new Set() };
+  renderWizard();
+}
+function closeWizard(){ wiz=null; const s=$('#scrim'); if(s)s.remove(); }
+function wizNames(){
+  const out=[]; for(let i=0;i<wiz.count;i++) out.push(wiz.names[i]??('Genotype '+(i+1)));
+  return out;
+}
+function wizEntryCount(){
+  if(wiz.design!=='LT') return wiz.count;
+  const l=wiz.lines.filter(x=>x.trim()).length, t=wiz.testers.filter(x=>x.trim()).length;
+  return l*t + (wiz.includeParents?l+t:0) + wiz.checks.filter(x=>x.trim()).length;
+}
+function renderWizard(){
+  if(!wiz)return;
+  let s=$('#scrim');
+  if(!s){s=document.createElement('div');s.id='scrim';s.className='scrim';document.body.appendChild(s);}
+  const step=wiz.step;
+  const errDf = wiz.design==='CRD' ? wizEntryCount()*(wiz.reps-1)
+    : wiz.design==='RCBD' ? (wizEntryCount()-1)*(wiz.reps-1) : null;
+
+  const body = step===1 ? `
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="field"><label class="label" for="w-name">Experiment name</label>
+        <input class="input" id="w-name" value="${esc(wiz.name)}" placeholder="e.g. Morpho-physiological characterization of cotton breeding lines">
+        <span class="hint">Appears on every sheet of the exported workbook.</span></div>
+      <div class="grid-2">
+        <div class="field"><label class="label" for="w-season">Season</label>
+          <input class="input" id="w-season" value="${esc(wiz.season)}"></div>
+        <div class="field"><label class="label" for="w-site">Location / station</label>
+          <input class="input" id="w-site" value="${esc(wiz.site)}" placeholder="The Islamia University of Bahawalpur"></div>
+      </div>
+      <div class="field"><label class="label" for="w-inv">Investigator</label>
+        <input class="input" id="w-inv" value="${esc(wiz.investigator)}"></div>
+    </div>`
+  : step===2 ? `
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div class="grid-2">
+        <button class="choice" data-w="pmode" data-v="multi" aria-pressed="${wiz.plantMode==='multi'}">
+          <h4>Multi-plant replication</h4>
+          <p>Several plants recorded inside each plot. You get plant-level raw data, plot means,
+          and within-plot uniformity for every trait.</p></button>
+        <button class="choice" data-w="pmode" data-v="single" aria-pressed="${wiz.plantMode==='single'}">
+          <h4>Single-plant replication</h4>
+          <p>One plant per replication. All replications sit on one screen as columns.</p></button>
+      </div>
+      ${wiz.plantMode==='multi'?`<div class="field" style="max-width:260px">
+        <label class="label" for="w-plants">Plants per replication</label>
+        <input class="input num" id="w-plants" inputmode="numeric" value="${wiz.plants}">
+        <span class="hint">The descriptor suggests 10 plants in each of 4 replications.</span></div>`:''}
+      <div class="note">Qualitative descriptors and quantitative traits are both recorded on every plant.
+      Plot means are computed for you, so the ANOVA always runs on the plot, not on individual plants.</div>
+    </div>`
+  : step===3 ? `
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div class="grid-3">
+        <button class="choice" data-w="design" data-v="RCBD" aria-pressed="${wiz.design==='RCBD'}">
+          <h4>RCBD</h4><p>Field trials where soil or moisture varies. Replication is removed from error.</p></button>
+        <button class="choice" data-w="design" data-v="CRD" aria-pressed="${wiz.design==='CRD'}">
+          <h4>CRD</h4><p>Uniform conditions: pots, glasshouse, lab.</p></button>
+        <button class="choice" data-w="design" data-v="LT" aria-pressed="${wiz.design==='LT'}">
+          <h4>Line × Tester</h4><p>Crosses of lines with testers. Adds GCA, SCA, additive and dominance variance.</p></button>
+      </div>
+      ${wiz.design==='LT'?`
+        <div class="grid-2">
+          <div class="field"><label class="label">Lines (female parents), one per line</label>
+            <textarea class="input" id="w-lines" style="height:110px;padding:8px 11px">${esc(wiz.lines.join('\n'))}</textarea></div>
+          <div class="field"><label class="label">Testers (male parents), one per line</label>
+            <textarea class="input" id="w-testers" style="height:110px;padding:8px 11px">${esc(wiz.testers.join('\n'))}</textarea></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label class="label">Replications</label>
+            <input class="input num" id="w-reps" inputmode="numeric" value="${wiz.reps}"></div>
+          <div class="field"><label class="label">Checks (optional), one per line</label>
+            <textarea class="input" id="w-checks" style="height:64px;padding:8px 11px">${esc((wiz.checks||[]).join('\n'))}</textarea></div>
+        </div>
+        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+          <input type="checkbox" id="w-parents" ${wiz.includeParents?'checked':''} style="margin-top:3px">
+          <span><strong class="t-sh">Include parents as entries</strong>
+          <span class="t-meta" style="display:block">Needed if you want parent means beside the crosses. Combining ability uses the crosses only.</span></span>
+        </label>
+        <div class="note">Layout: <strong class="num">${wiz.lines.filter(x=>x.trim()).length} lines × ${wiz.testers.filter(x=>x.trim()).length} testers
+        = ${wiz.lines.filter(x=>x.trim()).length*wiz.testers.filter(x=>x.trim()).length} crosses</strong>,
+        ${wiz.includeParents?'plus parents, ':''}${wiz.checks.filter(x=>x.trim()).length?'plus checks, ':''}
+        <strong class="num">${wizEntryCount()}</strong> entries in total.</div>`
+      :`<div class="grid-2">
+        <div class="field"><label class="label" for="w-reps">Replications</label>
+          <input class="input num" id="w-reps" inputmode="numeric" value="${wiz.reps}"></div>
+        <div class="field"><label class="label" for="w-count">Number of genotypes</label>
+          <input class="input num" id="w-count" inputmode="numeric" value="${wiz.count}"></div>
+      </div>
+      <div class="note">Layout: <strong class="num">${wiz.count} × ${wiz.reps} = ${wiz.count*wiz.reps}</strong> plots,
+      <strong class="num">${wiz.count*wiz.reps*(wiz.plantMode==='single'?1:wiz.plants)}</strong> plant records.
+      Error degrees of freedom <strong class="num">${errDf}</strong>.
+      ${errDf<10?'<br><span style="color:#7E5A08">Below 10 error df the F-test is weak. Add a replication if the field allows.</span>':''}</div>`}
+    </div>`
+  : step===4 ? traitPickerHTML(wiz.Q,wiz.M)
+  : wiz.design==='LT' ? `
+    <div class="note">Entries are generated from your lines and testers. You can rename any of them later
+    from the Traits screen.</div>
+    <div style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:var(--r-md);margin-top:12px">
+      <table class="tbl"><thead><tr><th style="width:60px">Code</th><th>Entry</th><th style="width:110px">Type</th></tr></thead>
+      <tbody>${buildEntries({design:'LT',lines:wiz.lines.filter(x=>x.trim()),
+        testers:wiz.testers.filter(x=>x.trim()),includeParents:wiz.includeParents,
+        checks:wiz.checks.filter(x=>x.trim())}).map(e=>
+        `<tr><td class="num" style="color:var(--seed)">${e.code}</td><td>${esc(e.name)}</td>
+         <td class="t-meta">${e.type}</td></tr>`).join('')}</tbody></table></div>`
+  : `
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="label">Name your genotypes — paste a list into the first box to fill the rest</div>
+      <div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:var(--r-md)">
+        <table class="tbl"><thead><tr><th style="width:64px">Code</th><th>Name</th></tr></thead><tbody>
+        ${wizNames().map((n,i)=>`<tr><td class="num" style="color:var(--seed)">G${i+1}</td>
+          <td><input class="input" data-gname="${i}" value="${esc(n)}" style="height:32px"></td></tr>`).join('')}
+        </tbody></table></div>
+    </div>`;
+
+  const titles=['','What are you running, and where?','How many plants sit inside one replication?',
+    'The design decides which model runs later.','Only the traits you tick appear on the sheet.',
+    wiz.design==='LT'?'Check the generated entry list.':'You can rename an entry at any time.'];
+
+  s.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="New trial"
+      style="${step===4?'width:min(980px,100%)':''}">
+    <div class="modal-head"><div style="flex:1"><h2 class="t-title">New trial</h2>
+      <p class="t-small" style="margin-top:2px">${titles[step]}</p></div>
+      <button class="btn btn-ghost btn-icon" data-w="close" aria-label="Close">✕</button></div>
+    <div class="modal-body">${body}</div>
+    <div class="modal-foot">
+      <div class="steps">${[1,2,3,4,5].map(i=>`<span class="step-dot" data-on="${i<=step?1:0}"></span>`).join('')}
+        <span class="t-meta" style="margin-left:6px">Step ${step} of 5</span></div>
+      <div style="display:flex;gap:8px">
+        ${step>1?`<button class="btn" data-w="back">Back</button>`:''}
+        <button class="btn btn-primary" data-w="next">${step===5?'Create trial':'Continue'}</button></div>
+    </div></div>`;
+
+  s.onclick=e=>{
+    const b=e.target.closest('[data-w]'); if(!b)return;
+    const k=b.dataset.w;
+    if(k==='close'){closeWizard();return;}
+    if(k==='pmode'){captureWizard();wiz.plantMode=b.dataset.v;renderWizard();return;}
+    if(k==='design'){captureWizard();wiz.design=b.dataset.v;renderWizard();return;}
+    if(k==='back'){captureWizard();wiz.step--;renderWizard();return;}
+    if(k==='next'){
+      captureWizard();
+      if(wiz.step===1&&!wiz.name.trim()){const el=$('#w-name');el.focus();el.style.borderColor='var(--flag)';return;}
+      if(wiz.step===3&&wiz.design==='LT'){
+        if(wiz.lines.filter(x=>x.trim()).length<2||wiz.testers.filter(x=>x.trim()).length<2){
+          toast('Line × Tester needs at least 2 lines and 2 testers'); return; }
+      }
+      if(wiz.step===4&&wiz.Q.size+wiz.M.size===0){toast('Pick at least one trait to record');return;}
+      if(wiz.step<5){wiz.step++;renderWizard();return;}
+      const p=newProject({...wiz, names:wizNames(),
+        lines:wiz.lines.filter(x=>x.trim()), testers:wiz.testers.filter(x=>x.trim()),
+        checks:wiz.checks.filter(x=>x.trim()), selQ:[...wiz.Q], selM:[...wiz.M]});
+      closeWizard(); VIEW.screen='record'; VIEW.entry=p.entries[0].id; VIEW.rep=1; render();
+      toast(`Trial created — ${p.entries.length*p.reps*p.plants} plant records to fill`);
+      return;
+    }
+    if(pickerClick(b,wiz.Q,wiz.M)){renderWizard();}
+  };
+  s.oninput=e=>{
+    const gi=e.target.dataset.gname;
+    if(gi!==undefined){
+      const v=e.target.value;
+      if(v.includes('\n')){
+        v.split('\n').map(x=>x.trim()).filter(Boolean).forEach((nm,j)=>wiz.names[+gi+j]=nm);
+        renderWizard(); return;
+      }
+      wiz.names[+gi]=v;
+    }
+    if(e.target.id==='w-parents'){wiz.includeParents=e.target.checked;renderWizard();}
+  };
+  const f=s.querySelector('input,textarea'); if(f&&step!==4)f.focus();
+}
+function captureWizard(){
+  const g=id=>{const el=$(id);return el?el.value:undefined;};
+  if(wiz.step===1){
+    wiz.name=g('#w-name')??wiz.name; wiz.season=g('#w-season')??wiz.season;
+    wiz.site=g('#w-site')??wiz.site; wiz.investigator=g('#w-inv')??wiz.investigator;
+  }
+  if(wiz.step===2){ const v=parseInt(g('#w-plants')); if(v)wiz.plants=Math.max(1,Math.min(50,v)); }
+  if(wiz.step===3){
+    const r=parseInt(g('#w-reps')); if(r)wiz.reps=Math.max(2,Math.min(12,r));
+    const c=parseInt(g('#w-count')); if(c)wiz.count=Math.max(2,Math.min(300,c));
+    const L=g('#w-lines'), T=g('#w-testers'), K=g('#w-checks');
+    if(L!==undefined)wiz.lines=L.split('\n');
+    if(T!==undefined)wiz.testers=T.split('\n');
+    if(K!==undefined)wiz.checks=K.split('\n');
+    const pa=$('#w-parents'); if(pa)wiz.includeParents=pa.checked;
+  }
+  if(wiz.step===5){ $$('[data-gname]').forEach(el=>wiz.names[+el.dataset.gname]=el.value); }
+}
+
+/* ---- trait picker (shared by wizard + traits screen) ---- */
+const PRESETS=[
+  {id:'all',n:'Everything',q:'*',m:'*'},
+  {id:'morph',n:'Plant morphology',q:['sdl','plt','lef','flw','bol','sed'],m:['qplt','qlef','qflw']},
+  {id:'yield',n:'Yield & fibre',q:['bol','fib'],m:['phen','qbol','qsed','qfib']},
+  {id:'dus',n:'DUS qualitative only',q:'*',m:[]},
+  {id:'meas',n:'Measurements only',q:[],m:'*'},
+  {id:'none',n:'Clear all',q:[],m:[]}
+];
+function presetSets(pre,p){
+  const QL=allQualTraits(p), ML=allQuantTraits(p);
+  const pick=(gr,list)=>gr==='*'?new Set(list.map(t=>t.k)):new Set(list.filter(t=>gr.includes(t.g)).map(t=>t.k));
+  return {Q:pick(pre.q,QL),M:pick(pre.m,ML)};
+}
+function groupState(ts,set){
+  const on=ts.filter(t=>set.has(t.k)).length;
+  return {on,total:ts.length,s:on===0?'none':on===ts.length?'all':'some'};
+}
+function pickerColumn(title,groups,set,kind){
+  return `<div class="pick-col"><h4>${title}</h4>
+    ${groups.map(gr=>{const st=groupState(gr.traits,set);
+      return `<div class="pgroup">
+        <button class="pgrp-head" data-w="tgroup" data-kind="${kind}" data-id="${gr.id}">
+          <span class="cbox" data-s="${st.s}"></span>${esc(gr.name)}<small>${st.on}/${st.total}</small></button>
+        <div class="pchips">${gr.traits.map(t=>`<button class="tchip" data-w="ttrait" data-kind="${kind}"
+          data-k="${t.k}" aria-pressed="${set.has(t.k)}">${esc(t.n)}</button>`).join('')}</div>
+      </div>`;}).join('')}</div>`;
+}
+function traitPickerHTML(Q,M,p){
+  const total=Q.size+M.size;
+  const QG=p?qualGroups(p):QUAL_GROUPS, MG=p?quantGroups(p):QUANT_GROUPS;
+  const match=PRESETS.find(pre=>{const ps=presetSets(pre,p);
+    return ps.Q.size===Q.size&&ps.M.size===M.size&&[...ps.Q].every(k=>Q.has(k))&&[...ps.M].every(k=>M.has(k));});
+  return `<div class="pick-presets"><span class="t-meta" style="margin-right:4px">Start from</span>
+    ${PRESETS.map(pre=>`<button class="chip" data-w="preset" data-v="${pre.id}"
+      aria-pressed="${match&&match.id===pre.id}">${pre.n}</button>`).join('')}
+    <button class="chip" data-w="addcustom" style="margin-left:auto">${icon('plus',13)}Add custom trait</button></div>
+  <div class="pick-bar">${icon('check',15)}
+    <strong class="num">${total}</strong> traits on the sheet —
+    <span class="num">${Q.size}</span> qualitative, <span class="num">${M.size}</span> measured.</div>
+  <div class="pick-cols">
+    ${pickerColumn('QUALITATIVE — pick one category per plant',QG,Q,'q')}
+    ${pickerColumn('QUANTITATIVE — type a number per plant',MG,M,'m')}</div>`;
+}
+function pickerClick(b,Q,M,p){
+  const k=b.dataset.w;
+  if(k==='preset'){const ps=presetSets(PRESETS.find(x=>x.id===b.dataset.v),p);
+    Q.clear();ps.Q.forEach(x=>Q.add(x));M.clear();ps.M.forEach(x=>M.add(x));return true;}
+  if(k==='tgroup'){
+    const set=b.dataset.kind==='q'?Q:M;
+    const groups=b.dataset.kind==='q'?(p?qualGroups(p):QUAL_GROUPS):(p?quantGroups(p):QUANT_GROUPS);
+    const gr=groups.find(g=>g.id===b.dataset.id); if(!gr)return false;
+    const st=groupState(gr.traits,set);
+    gr.traits.forEach(t=>st.s==='all'?set.delete(t.k):set.add(t.k));
+    return true;
+  }
+  if(k==='ttrait'){const set=b.dataset.kind==='q'?Q:M;
+    set.has(b.dataset.k)?set.delete(b.dataset.k):set.add(b.dataset.k); return true;}
+  if(k==='addcustom'){ openCustomTrait(); return false; }
+  return false;
+}
+
+/* ---- custom trait dialog ---- */
+let customTarget=null;
+function openCustomTrait(){
+  const s=document.createElement('div'); s.className='scrim'; s.id='scrim4';
+  s.innerHTML=`<div class="modal" style="width:min(560px,100%)">
+    <div class="modal-head"><div style="flex:1"><h2 class="t-title">Add a custom trait</h2>
+      <p class="t-small" style="margin-top:4px">For anything outside the FSC&amp;RD descriptor — physiological,
+      biochemical or a trait your study defines.</p></div>
+      <button class="btn btn-ghost btn-icon" data-x="close">✕</button></div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
+      <div class="seg" id="ct-kind"><button data-k="quant" aria-pressed="true">Measured (number)</button>
+        <button data-k="qual" aria-pressed="false">Scored (category)</button></div>
+      <div class="field"><label class="label">Trait name</label>
+        <input class="input" id="ct-name" placeholder="e.g. Relative water content"></div>
+      <div class="grid-3">
+        <div class="field"><label class="label">Code (optional)</label>
+          <input class="input" id="ct-code" placeholder="RWC"></div>
+        <div class="field"><label class="label">Unit</label>
+          <input class="input" id="ct-unit" placeholder="%"></div>
+        <div class="field"><label class="label">Group (optional)</label>
+          <input class="input" id="ct-group" placeholder="Physiological"></div>
+      </div>
+      <div class="grid-2" id="ct-num">
+        <div class="field"><label class="label">Decimal places</label>
+          <input class="input num" id="ct-dp" value="2" inputmode="numeric"></div>
+        <div class="field"><label class="label">Maximum sensible value</label>
+          <input class="input num" id="ct-max" value="1000" inputmode="numeric"></div>
+      </div>
+      <div class="field" id="ct-cat" style="display:none"><label class="label">Categories, one per line</label>
+        <textarea class="input" id="ct-opts" style="height:96px;padding:8px 11px" placeholder="absent&#10;sparse&#10;medium&#10;profuse"></textarea></div>
+    </div>
+    <div class="modal-foot" style="justify-content:flex-end">
+      <button class="btn" data-x="close">Cancel</button>
+      <button class="btn btn-primary" data-x="save">Add trait</button></div></div>`;
+  document.body.appendChild(s);
+  let kind='quant';
+  s.onclick=e=>{
+    const kb=e.target.closest('#ct-kind button');
+    if(kb){ kind=kb.dataset.k;
+      s.querySelectorAll('#ct-kind button').forEach(b=>b.setAttribute('aria-pressed',b===kb));
+      $('#ct-num').style.display=kind==='quant'?'':'none';
+      $('#ct-cat').style.display=kind==='qual'?'':'none'; return; }
+    const b=e.target.closest('[data-x]'); if(!b){if(e.target===s)s.remove();return;}
+    if(b.dataset.x==='close'){s.remove();return;}
+    const name=$('#ct-name').value.trim();
+    if(!name){$('#ct-name').style.borderColor='var(--flag)';return;}
+    const k='cx_'+uid();
+    const base={k,n:name,s:'any',g:kind==='qual'?'cq':'cm',gname:kind==='qual'?'Custom descriptors':'Custom traits',
+      grp:$('#ct-group').value.trim(),custom:true};
+    let tr;
+    if(kind==='qual'){
+      const o=$('#ct-opts').value.split('\n').map(x=>x.trim()).filter(Boolean);
+      if(o.length<2){$('#ct-opts').style.borderColor='var(--flag)';return;}
+      tr={...base,o};
+    } else {
+      tr={...base,u:$('#ct-unit').value.trim()||'',dp:Math.max(0,Math.min(4,parseInt($('#ct-dp').value)||2)),
+          max:parseFloat($('#ct-max').value)||1e9};
+    }
+    const code=$('#ct-code').value.trim();
+    const p=active();
+    if(p){
+      p.custom=p.custom||{qual:[],quant:[]};
+      p.custom[kind==='qual'?'qual':'quant'].push(tr);
+      if(code){p.codes=p.codes||{};p.codes[k]=code;}
+      if(base.grp){p.groups=p.groups||{};p.groups[k]=base.grp;}
+      (kind==='qual'?p.traits.qual:p.traits.quant).push(k);
+      persist();
+    } else if(wiz){
+      wiz.custom=wiz.custom||{qual:[],quant:[]};
+      wiz.custom[kind==='qual'?'qual':'quant'].push(tr);
+      (kind==='qual'?wiz.Q:wiz.M).add(k);
+      wiz.codes=wiz.codes||{}; if(code)wiz.codes[k]=code;
+    }
+    s.remove();
+    if(editSel){ (kind==='qual'?editSel.Q:editSel.M).add(k); renderTraitsScreen(); }
+    else if(wiz) renderWizard();
+    else render();
+    toast('Trait added');
+  };
+  $('#ct-name').focus();
+}
+
+</script>
+<script>
+
+/* ============================================================
+   OVERVIEW
+   ============================================================ */
+function screenOverview(){
+  const p=active(), pr=projectProgress(p), sc=scope(p);
+  return `<div class="page">
+    <div class="page-head"><div>
+      <h1 class="t-display">${esc(p.name)}</h1>
+      <p class="page-sub">${esc(p.site||'—')} · ${esc(p.season||'—')} · ${esc(p.investigator||'—')}</p></div>
+      <button class="btn btn-primary" data-act="go" data-screen="record">${icon('pen')}Continue recording</button></div>
+    <div class="hr"></div>
+    <div class="statgrid" style="margin-bottom:24px">
+      <div class="statcell"><div class="v">${DESIGN_NAME[p.design]}</div><div class="l">Design</div></div>
+      <div class="statcell"><div class="v">${p.entries.length}</div><div class="l">Entries</div></div>
+      <div class="statcell"><div class="v">${p.reps}</div><div class="l">Replications</div></div>
+      <div class="statcell"><div class="v">${p.plants}</div><div class="l">Plants per plot</div></div>
+      <div class="statcell"><div class="v">${sc.Q.size+sc.M.size}</div><div class="l">Traits on sheet</div></div>
+      <div class="statcell"><div class="v">${pr.done.toLocaleString()}</div><div class="l">Values recorded</div></div>
+      <div class="statcell"><div class="v">${Math.round(pr.pct*100)}%</div><div class="l">Completion</div></div>
+    </div>
+    <div class="sheet" style="margin-bottom:24px">
+      <div class="sheet-head"><h3 class="t-h">Field map</h3>
+        <span class="t-meta">One square per plot. Click to jump into it.</span></div>
+      <div class="sheet-body scroll-x">
+        <table class="tbl" style="width:auto"><thead><tr><th class="sticky-col">Entry</th>
+          ${Array.from({length:p.reps},(_,i)=>`<th class="num" style="text-align:center">R${i+1}</th>`).join('')}
+          <th class="num">Filled</th></tr></thead><tbody>
+        ${p.entries.map(e=>{
+          let d=0,t=0;
+          const cells=Array.from({length:p.reps},(_,i)=>{
+            const u=repProgress(p,e.id,i+1); d+=u.done; t+=u.total;
+            const bg=u.pct>=1?'var(--leaf)':u.pct>0
+              ?`color-mix(in srgb, var(--amber) ${Math.round(u.pct*100)}%, var(--line-2))`:'var(--surface-2)';
+            const fg=u.pct>0.5?'#fff':'var(--ink-3)';
+            return `<td style="text-align:center;padding:5px"><button data-act="jump" data-e="${e.id}" data-r="${i+1}"
+              title="${esc(e.name)} R${i+1}: ${u.done}/${u.total}"
+              style="width:52px;height:30px;border-radius:var(--r);border:1px solid var(--line);background:${bg};color:${fg};font-family:var(--mono);font-size:11px">
+              ${Math.round(u.pct*100)||''}</button></td>`;}).join('');
+          return `<tr><td class="sticky-col"><span class="num" style="color:var(--seed);font-size:12px">${e.code}</span>&nbsp;${esc(e.name)}
+            ${e.type&&e.type!=='genotype'?`<span class="pill pill-plain" style="margin-left:6px">${e.type}</span>`:''}</td>
+            ${cells}<td class="num">${t?Math.round(d/t*100):0}%</td></tr>`;}).join('')}
+        </tbody></table></div></div>
+    <div class="grid-2">
+      <div class="card card-pad"><h3 class="t-h" style="margin-bottom:8px">Ready for analysis</h3>
+        <p class="t-small">${analysableQuant(p).length} quantitative traits and ${analysableQual(p).length}
+        descriptors currently have enough records. Open Analysis to pick the procedures you need.</p></div>
+      <div class="card card-pad"><h3 class="t-h" style="margin-bottom:8px">Recording standard</h3>
+        <p class="t-small">Distinctness and stability on 40 plants over 4 replications, 10 per replication.
+        Aberrant plants not more than 4 in 40, and not more than 8 in 150 for plot uniformity.
+        All leaf traits on the 4th leaf from the top.</p></div>
+    </div></div>`;
+}
+
+/* ============================================================
+   RECORD — Excel style grid
+   Columns are plants within the selected replication, or the
+   replications themselves when the trial is single plant.
+   ============================================================ */
+function gridCols(p){
+  if(p.plants>1) return Array.from({length:p.plants},(_,i)=>({rep:VIEW.rep,plant:i+1,label:'P'+(i+1)}));
+  return Array.from({length:p.reps},(_,i)=>({rep:i+1,plant:1,label:'R'+(i+1)}));
+}
+function screenRecord(){
+  const p=active();
+  if(!VIEW.entry||!p.entries.find(e=>e.id===VIEW.entry)) VIEW.entry=p.entries[0].id;
+  const e=p.entries.find(x=>x.id===VIEW.entry);
+  const cols=gridCols(p);
+  const traits=VIEW.tab==='qual'?scopedQual(p):scopedQuant(p);
+  const sc=scope(p);
+  const ei=p.entries.findIndex(x=>x.id===VIEW.entry);
+  let done=0,tot=0;
+  for(let r=1;r<=p.reps;r++){const x=repProgress(p,e.id,r);done+=x.done;tot+=x.total;}
+
+  const head=`<tr><th class="sticky-col" style="min-width:230px">Trait</th>
+    ${traits.length&&VIEW.tab==='quant'?'':''}
+    ${cols.map(c=>`<th class="num" style="min-width:86px;text-align:center">${c.label}</th>`).join('')}
+    ${VIEW.tab==='quant'?`<th class="num" style="min-width:84px">Mean</th><th class="num" style="min-width:64px">CV%</th>`:
+      `<th class="num" style="min-width:120px">Modal class</th>`}</tr>`;
+
+  const rows=traits.map((t,ri)=>{
+    const cells=cols.map((c,ci)=>{
+      const cl=cell(p,e.id,c.rep,c.plant);
+      if(VIEW.tab==='qual'){
+        const v=cl.qual[t.k]??'';
+        return `<td class="gcell"><select class="gsel" data-k="${t.k}" data-rep="${c.rep}" data-pl="${c.plant}"
+          data-r="${ri}" data-c="${ci}" ${v?'data-set="1"':''}>
+          <option value=""></option>
+          ${t.o.map((o,i)=>`<option value="${esc(o)}" ${v===o?'selected':''}>${i+1} · ${esc(o)}</option>`).join('')}
+        </select></td>`;
+      }
+      const v=cl.quant[t.k]??'';
+      return `<td class="gcell"><input class="ginp" type="text" inputmode="decimal" autocomplete="off"
+        data-k="${t.k}" data-rep="${c.rep}" data-pl="${c.plant}" data-max="${t.max||1e9}"
+        data-r="${ri}" data-c="${ci}" value="${esc(v)}"></td>`;
+    }).join('');
+    let tail;
+    if(VIEW.tab==='quant'){
+      const vals=cols.map(c=>{const v=cell(p,e.id,c.rep,c.plant).quant[t.k];
+        return filled(v)&&isFinite(+v)?+v:null;}).filter(v=>v!==null);
+      const m=vals.length?S.mean(vals):null;
+      const cv=vals.length>1&&m?(S.sd(vals)/m)*100:null;
+      tail=`<td class="num gmean">${m===null?'—':fmt(m,t.dp??2)}</td>
+            <td class="num gmean" style="${cv!==null&&cv>25?'color:var(--amber)':''}">${cv===null?'—':fmt(cv,1)}</td>`;
+    } else {
+      const counts={};
+      cols.forEach(c=>{const v=cell(p,e.id,c.rep,c.plant).qual[t.k]; if(filled(v))counts[v]=(counts[v]||0)+1;});
+      const ks=Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+      tail=`<td class="gmean t-meta">${ks.length?esc(ks[0])+' ('+counts[ks[0]]+'/'+cols.length+')':'—'}</td>`;
+    }
+    const code=codeOf(p,t);
+    return `<tr><td class="sticky-col">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span>${esc(t.n)}</span>
+        ${code?`<span class="num" style="font-size:11px;color:var(--seed)">${esc(code)}</span>`:''}
+        ${t.u?`<span class="t-meta" style="margin-left:auto">${esc(t.u)}</span>`:''}
+      </div></td>${cells}${tail}</tr>`;
+  }).join('');
+
+  return `<div class="page page-wide">
+    <div class="page-head"><div>
+      <h1 class="t-title">Record data</h1>
+      <p class="t-small" style="margin-top:2px">${esc(e.name)} —
+        ${done} of ${tot} values across all replications. Paste a block from Excel into any cell.</p></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="seg"><button data-act="tab" data-v="quant" aria-pressed="${VIEW.tab==='quant'}">Quantitative · ${sc.M.size}</button>
+          <button data-act="tab" data-v="qual" aria-pressed="${VIEW.tab==='qual'}">Qualitative · ${sc.Q.size}</button></div>
+        <button class="btn btn-sm" data-act="go" data-screen="traits">${icon('cog',14)}Traits</button></div></div>
+
+    <div class="unitbar" style="margin-top:16px">
+      <div class="unit-row">
+        <span class="t-meta" style="width:58px">Entry</span>
+        <button class="btn btn-sm" data-act="prev-entry" ${ei===0?'disabled':''}>←</button>
+        <select class="select" data-act="pick-e" style="width:300px;height:32px">
+          ${p.entries.map(x=>`<option value="${x.id}" ${x.id===e.id?'selected':''}>${esc(x.code)} — ${esc(x.name)}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm" data-act="next-entry" ${ei===p.entries.length-1?'disabled':''}>→</button>
+        ${p.plants>1?`<span style="width:12px"></span><span class="t-meta">Replication</span>
+          ${Array.from({length:p.reps},(_,i)=>{const rp=repProgress(p,e.id,i+1);
+            const f=rp.pct>=1?'full':rp.pct>0?'part':'none';
+            return `<button class="chip" data-act="pick-r" data-v="${i+1}" aria-pressed="${VIEW.rep===i+1}">
+              <span class="ring" data-f="${f}"></span>R${i+1}</button>`;}).join('')}`
+         :`<span class="pill pill-plain" style="margin-left:12px">Single plant per replication — all reps shown</span>`}
+        <div style="margin-left:auto;display:flex;gap:6px">
+          ${p.plants>1&&VIEW.rep>1?`<button class="btn btn-sm" data-act="copy-rep">${icon('copy',14)}Copy R${VIEW.rep-1}</button>`:''}
+          <button class="btn btn-sm" data-act="fill-row" title="Fill the row from its first value">Fill across</button>
+        </div></div>
+    </div>
+
+    <div class="sheet">
+      <div class="scroll-x" style="max-height:66vh"><table class="tbl grid">
+        <thead>${head}</thead><tbody id="gridbody">${rows}</tbody></table></div>
+    </div>
+    <div class="plotbar">
+      <span class="bar ${done>0&&done<tot?'partial':''}"><i style="width:${tot?Math.round(done/tot*100):0}%"></i></span>
+      <span class="num" style="font-size:13px;color:var(--ink-2)">${done}/${tot}</span>
+      <span class="t-meta" style="flex:1">Enter moves down · Tab moves right · Ctrl+V pastes a block</span>
+      <button class="btn btn-sm" data-act="prev-entry" ${ei===0?'disabled':''}>← Previous entry</button>
+      <button class="btn btn-primary" data-act="next-entry" ${ei===p.entries.length-1?'disabled':''}>Next entry →</button>
+    </div></div>`;
+}
+
+/* grid interaction */
+function gridCells(){ return $$('#gridbody .ginp, #gridbody .gsel'); }
+function gridAt(r,c){ return $(`#gridbody [data-r="${r}"][data-c="${c}"]`); }
+function writeCell(el,val){
+  const p=active();
+  const cl=cell(p,VIEW.entry,+el.dataset.rep,+el.dataset.pl);
+  if(el.classList.contains('gsel')){ 
+    if(val==='') delete cl.qual[el.dataset.k]; else cl.qual[el.dataset.k]=val;
+    el.value=val; el.toggleAttribute('data-set',!!val);
+  } else {
+    const clean=String(val).replace(/[^0-9.\-]/g,'');
+    if(clean==='') delete cl.quant[el.dataset.k]; else cl.quant[el.dataset.k]=clean;
+    el.value=clean;
+    const num=parseFloat(clean);
+    el.classList.toggle('bad', clean!=='' && (!isFinite(num)||num<0||num>+el.dataset.max));
+  }
+  p.updated=Date.now();
+}
+function refreshDerived(){
+  const p=active(), cols=gridCols(p);
+  const traits=VIEW.tab==='qual'?scopedQual(p):scopedQuant(p);
+  $$('#gridbody tr').forEach((tr,ri)=>{
+    const t=traits[ri]; if(!t)return;
+    const outs=tr.querySelectorAll('.gmean');
+    if(VIEW.tab==='quant'){
+      const vals=cols.map(c=>{const v=cell(p,VIEW.entry,c.rep,c.plant).quant[t.k];
+        return filled(v)&&isFinite(+v)?+v:null;}).filter(v=>v!==null);
+      const m=vals.length?S.mean(vals):null;
+      const cv=vals.length>1&&m?(S.sd(vals)/m)*100:null;
+      if(outs[0])outs[0].textContent=m===null?'—':fmt(m,t.dp??2);
+      if(outs[1]){outs[1].textContent=cv===null?'—':fmt(cv,1);
+        outs[1].style.color=(cv!==null&&cv>25)?'var(--amber)':'';}
+    } else {
+      const counts={};
+      cols.forEach(c=>{const v=cell(p,VIEW.entry,c.rep,c.plant).qual[t.k]; if(filled(v))counts[v]=(counts[v]||0)+1;});
+      const ks=Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+      if(outs[0])outs[0].textContent=ks.length?`${ks[0]} (${counts[ks[0]]}/${cols.length})`:'—';
+    }
+  });
+  const bar=$('.plotbar .bar>i'), lab=$('.plotbar .num');
+  if(bar){ const p2=active(); let d=0,t=0;
+    for(let r=1;r<=p2.reps;r++){const x=repProgress(p2,VIEW.entry,r);d+=x.done;t+=x.total;}
+    bar.style.width=(t?Math.round(d/t*100):0)+'%'; if(lab)lab.textContent=`${d}/${t}`;
+  }
+}
+function pasteBlock(el,text){
+  const rows=text.replace(/\r/g,'').split('\n').filter((l,i,a)=>l!==''||i<a.length-1);
+  const r0=+el.dataset.r, c0=+el.dataset.c;
+  rows.forEach((line,dr)=>{
+    line.split('\t').forEach((val,dc)=>{
+      const target=gridAt(r0+dr,c0+dc);
+      if(target) writeCell(target, val.trim());
+    });
+  });
+  persist(); refreshDerived();
+  toast(`Pasted ${rows.length} × ${rows[0].split('\t').length}`);
+}
+
+/* ============================================================
+   TRAITS SCREEN — scope, codes, groups, entry renaming
+   ============================================================ */
+let editSel=null, traitTab='scope';
+function screenTraits(){
+  const p=active(), sc=scope(p);
+  if(!editSel) editSel={Q:new Set(sc.Q),M:new Set(sc.M)};
+  return `<div class="page page-wide">
+    <div class="page-head"><div>
+      <h1 class="t-title">Traits</h1>
+      <p class="t-small" style="margin-top:2px">Choose what the sheet records, give traits an abbreviation if you
+      want one, and rename entries.</p></div>
+      <div class="seg">
+        <button data-act="ttab" data-v="scope" aria-pressed="${traitTab==='scope'}">Trait selection</button>
+        <button data-act="ttab" data-v="codes" aria-pressed="${traitTab==='codes'}">Codes &amp; groups</button>
+        <button data-act="ttab" data-v="entries" aria-pressed="${traitTab==='entries'}">Entries</button>
+      </div></div><div class="hr"></div>
+    ${traitTab==='scope'?`
+      <div class="card card-pad">${traitPickerHTML(editSel.Q,editSel.M,p)}</div>
+      <div style="display:flex;gap:10px;margin-top:16px;align-items:center">
+        <button class="btn btn-primary" data-act="apply-scope">${icon('check')}Update sheet</button>
+        <button class="btn" data-act="reset-scope">Discard changes</button>
+        <span class="t-meta">Removing a trait hides it. Values you already recorded are kept.</span></div>`
+    : traitTab==='codes'?`
+      <div class="note" style="margin-bottom:16px">Codes are optional. Leave a code blank and the full trait name
+      is used in every table and figure. Group is free text — Morphological, Physiological, Fibre, anything you need.</div>
+      <div class="sheet"><div class="scroll-x" style="max-height:70vh"><table class="tbl">
+        <thead><tr><th>Trait</th><th style="width:110px">Type</th><th style="width:130px">Code</th>
+          <th style="width:190px">Group</th><th style="width:90px">Unit</th></tr></thead>
+        <tbody>${[...scopedQuant(p).map(t=>({t,k:'Measured'})),...scopedQual(p).map(t=>({t,k:'Scored'}))]
+          .map(({t,k})=>`<tr><td>${esc(t.n)}</td><td class="t-meta">${k}</td>
+            <td><input class="input" style="height:30px" data-code="${t.k}" value="${esc(codeOf(p,t))}" placeholder="—"></td>
+            <td><input class="input" style="height:30px" data-grp="${t.k}" value="${esc(groupOf(p,t))}" placeholder="—"></td>
+            <td class="t-meta">${esc(t.u||'')}</td></tr>`).join('')}</tbody></table></div></div>`
+    :`<div class="sheet"><div class="scroll-x" style="max-height:70vh"><table class="tbl">
+        <thead><tr><th style="width:80px">Code</th><th>Entry name</th><th style="width:120px">Type</th></tr></thead>
+        <tbody>${p.entries.map(e=>`<tr><td class="num" style="color:var(--seed)">${e.code}</td>
+          <td><input class="input" style="height:30px" data-ename="${e.id}" value="${esc(e.name)}"></td>
+          <td class="t-meta">${e.type}${e.line?' · '+esc(e.line):''}${e.tester?' × '+esc(e.tester):''}</td></tr>`).join('')}
+        </tbody></table></div></div>`}
+    </div>`;
+}
+function renderTraitsScreen(){ render(); }
+
+</script>
+<script>
+
+/* ============================================================
+   ANALYSIS CATALOGUE
+   ============================================================ */
+const PROCS=[
+  {id:'A1', g:'Quantitative', n:'Descriptive statistics', d:'n, min, max, range, mean ± SE, SD, CV%, skewness, kurtosis'},
+  {id:'A2', g:'Quantitative', n:'ANOVA, CV%, LSD, h²', d:'Mean squares, F, p, significance, LSD 5% and 1%'},
+  {id:'A3', g:'Quantitative', n:'Entry means with LSD letters', d:'Ranked means, grouping letters, footer LSD and CV'},
+  {id:'A4', g:'Quantitative', n:'Pearson correlation', d:'r and p matrices, plus the significant pairs list'},
+  {id:'A5', g:'Quantitative', n:'Principal component analysis', d:'Eigenvalues, loadings, scores, scree and biplot'},
+  {id:'A6', g:'Quantitative', n:'Variance components', d:'σ²g, σ²e, σ²p, GCV%, PCV%, h²b, GA, GAM'},
+  {id:'A6b',g:'Quantitative', n:'Genotypic / phenotypic / environmental correlation', d:'From the covariance analysis'},
+  {id:'A6c',g:'Quantitative', n:'Path coefficient analysis', d:'Direct and indirect effects on a chosen trait'},
+  {id:'A7', g:'Quantitative', n:'Distance and clustering', d:'Euclidean distance, UPGMA dendrogram, Ward on PCA'},
+  {id:'A8', g:'Quantitative', n:'Within-plot uniformity', d:'Plant-to-plant variation inside each plot', needPlants:true},
+  {id:'B1', g:'Qualitative',  n:'Descriptor frequency', d:'Modal class, modal %, classes, within-line H′'},
+  {id:'B2', g:'Qualitative',  n:'Shannon diversity and Cramér′s V', d:'H′, H′max, ratio, chi-square, V'},
+  {id:'B2b',g:'Qualitative',  n:'Line uniformity ranking', d:'Mean within-line H′, descriptors fixed, off-type %'},
+  {id:'B3', g:'Qualitative',  n:'Multiple correspondence analysis', d:'Benzécri-adjusted inertia, scores, categories'},
+  {id:'B4', g:'Qualitative',  n:'Qualitative distance and clusters', d:'Distance on descriptor states, UPGMA cuts'},
+  {id:'B5', g:'Qualitative',  n:'Descriptor × descriptor association', d:'Pearson on line scores, Cramér′s V matrix'},
+  {id:'B6', g:'Qualitative',  n:'Qualitative × quantitative correlation', d:'Descriptor score against trait means'},
+  {id:'C1', g:'Combined',     n:'Mantel test and cluster concordance', d:'Agreement between the two data types'},
+  {id:'D1', g:'Mating design',n:'Line × Tester analysis', d:'ANOVA, GCA, SCA, σ²A, σ²D, narrow-sense h²', needLT:true}
+];
+
+/* helpers shared by analysis + export */
+function entryMeansMatrix(p,traits){
+  return p.entries.map(e=>traits.map(t=>entryMean(p,e.id,t.k)));
+}
+function completeTraitSet(p,traits){
+  return traits.filter(t=>p.entries.every(e=>entryMean(p,e.id,t.k)!==null));
+}
+function qualOrdinalMeans(p,quals){
+  // mean of the 1..k category code over all plants of an entry
+  return p.entries.map(e=>quals.map(t=>{
+    const codes=[];
+    for(let r=1;r<=p.reps;r++)for(let pl=1;pl<=p.plants;pl++){
+      const v=cell(p,e.id,r,pl).qual[t.k];
+      if(filled(v)){const i=t.o.indexOf(v); if(i>=0)codes.push(i+1);}
+    }
+    return codes.length?S.mean(codes):null;
+  }));
+}
+const tbl=(sheet,title,cols,rows,note)=>({sheet,title,cols,rows,note});
+
+/* ============================================================
+   RUN
+   ============================================================ */
+function runAnalysis(p,sel,dep){
+  const out={sections:[],figures:[],meta:{}};
+  const design=p.design==='LT'?'RCBD':p.design;
+  const traits=analysableQuant(p);
+  const quals=analysableQual(p).filter(t=>new Set(qualRecords(p,t.k).map(x=>x.v)).size>1);
+  const mono=analysableQual(p).filter(t=>new Set(qualRecords(p,t.k).map(x=>x.v)).size<=1);
+  const E=p.entries, lab=E.map(e=>e.code+' '+e.name);
+  const an={}; traits.forEach(t=>{const a=S.anova(obs(p,t.k),design); if(a&&!a.insufficient)an[t.k]=a;});
+  const anTraits=traits.filter(t=>an[t.k]);
+  out.meta={traits:traits.length,quals:quals.length,mono:mono.map(t=>t.n),entries:E.length};
+
+  const L=t=>labelOf(p,t);
+
+  /* ---------- A1 ---------- */
+  if(sel.has('A1')){
+    const rows=traits.map(t=>{
+      const vals=E.map(e=>entryMean(p,e.id,t.k)).filter(v=>v!==null);
+      const d=S.describe(vals);
+      return [t.n,codeOf(p,t),groupOf(p,t),d.n,fmt(d.min,3),fmt(d.max,3),fmt(d.range,3),
+        `${fmt(d.mean,2)} ± ${fmt(d.se,2)}`,fmt(d.sd,3),fmt(d.cv,2),fmt(d.skew,3),fmt(d.kurt,3)];
+    });
+    out.sections.push({id:'A1',title:'Descriptive statistics',
+      note:`Computed on entry means (n = ${E.length}).`,
+      tables:[tbl('A1_Descriptive','Descriptive statistics',
+        ['Trait','Code','Group','n','Minimum','Maximum','Range','Mean ± SE','SD','CV%','Skewness','Kurtosis'],rows)]});
+  }
+
+  /* ---------- A2 ---------- */
+  if(sel.has('A2')){
+    const rows=anTraits.map(t=>{const a=an[t.k];
+      return [t.n,codeOf(p,t),groupOf(p,t),fmt(a.grand,3),
+        a.MSblk!==null?fmt(a.MSblk,4):'—',fmt(a.MStrt,4),fmt(a.MSerr,4),
+        fmt(a.Ftrt,2),pStr(a.pTrt),stars(a.pTrt),sigWord(a.pTrt),
+        a.Fblk!==null?fmt(a.Fblk,2):'—',a.pBlk!==null?pStr(a.pBlk):'—',
+        a.pBlk!==null?stars(a.pBlk):'—',a.pBlk!==null?sigWord(a.pBlk):'—',
+        fmt(a.cv,2),fmt(a.lsd05,3),fmt(a.lsd01,3),fmt(a.h2,3)];});
+    out.sections.push({id:'A2',title:'Analysis of variance',
+      note:`${DESIGN_NAME[p.design]} model on plot means. ** significant at 1%, * significant at 5%, ns not significant.`,
+      tables:[tbl('A2_ANOVA_CV_LSD','ANOVA, CV% and LSD',
+        ['Trait','Code','Group','Grand mean','MS replication','MS genotype','MS error','F genotype','p','Sig.',
+         'Significance','F replication','p (rep)','Sig. (rep)','Significance (rep)','CV%','LSD 5%','LSD 1%','h2 broad'],rows)]});
+  }
+
+  /* ---------- A3 ---------- */
+  if(sel.has('A3')&&anTraits.length){
+    const cols=['Entry',...anTraits.map(L)];
+    const rows=E.map(e=>[e.name,...anTraits.map(t=>{
+      const m=an[t.k].means.find(x=>x.g===e.id);
+      return m?`${fmt(m.mean,2)} ${m.letters}`:'—';})]);
+    rows.push(['Mean',...anTraits.map(t=>fmt(an[t.k].grand,2))]);
+    rows.push(['LSD (5%)',...anTraits.map(t=>fmt(an[t.k].lsd05,3))]);
+    rows.push(['LSD (1%)',...anTraits.map(t=>fmt(an[t.k].lsd01,3))]);
+    rows.push(['CV (%)',...anTraits.map(t=>fmt(an[t.k].cv,2))]);
+    rows.push(['Sig.',...anTraits.map(t=>stars(an[t.k].pTrt))]);
+    rows.push(['Significance',...anTraits.map(t=>sigWord(an[t.k].pTrt))]);
+    out.sections.push({id:'A3',title:'Entry means with LSD grouping',
+      note:'Means not sharing a letter differ at the 5% level.',
+      tables:[tbl('A3_Means_LSD','Means with LSD letters',cols,rows)]});
+  }
+
+  /* ---------- A4 ---------- */
+  if(sel.has('A4')&&traits.length>1){
+    const M=entryMeansMatrix(p,traits);
+    const k=traits.length, R=[],P=[];
+    for(let i=0;i<k;i++){R[i]=[];P[i]=[];}
+    const pairs=[];
+    for(let i=0;i<k;i++)for(let j=0;j<k;j++){
+      if(i===j){R[i][j]=1;P[i][j]=0;continue;}
+      const a=[],b=[];
+      M.forEach(row=>{if(row[i]!==null&&row[j]!==null){a.push(row[i]);b.push(row[j]);}});
+      const c=a.length>=3?S.pearson(a,b):null;
+      R[i][j]=c?c.r:null; P[i][j]=c?c.p:null;
+      if(c&&i<j&&c.p<0.05) pairs.push([traits[i].n,traits[j].n,fmt(c.r,3),pStr(c.p),stars(c.p),
+        (groupOf(p,traits[i])||'—')+' × '+(groupOf(p,traits[j])||'—')]);
+    }
+    pairs.sort((x,y)=>Math.abs(+y[2])-Math.abs(+x[2]));
+    const names=traits.map(L);
+    const tri=names.map((n,i)=>[n,...names.map((_,j)=>j>i?'':
+      (R[i][j]===null?'—':fmt(R[i][j],3)+(i===j?'':stars(P[i][j])==='ns'?'':stars(P[i][j]))))]);
+    out.sections.push({id:'A4',title:'Pearson correlation',
+      note:`On entry means, n = ${E.length}, df = ${E.length-2}. ${pairs.length} pairs significant at 5%.`,
+      heat:{names,R},
+      tables:[
+        tbl('A4_Correlation','Correlation (lower triangle, with significance)',['index',...names],tri),
+        tbl('A4_Corr_r','Correlation coefficients',['index',...names],
+          names.map((n,i)=>[n,...R[i].map(v=>v===null?'':fmt(v,4))])),
+        tbl('A4_Corr_p','Correlation p values',['index',...names],
+          names.map((n,i)=>[n,...P[i].map(v=>v===null?'':fmt(v,5))])),
+        tbl('A4_Significant_pairs','Significant pairs',
+          ['Trait 1','Trait 2','r','p','Sig.','Type'],pairs)]});
+  }
+
+  /* ---------- A5 ---------- */
+  let pcaRes=null, pcTraits=[];
+  if(sel.has('A5')||sel.has('A7')||sel.has('C1')){
+    pcTraits=completeTraitSet(p,traits);
+    if(pcTraits.length>=2&&E.length>=3)
+      pcaRes=S.pca(entryMeansMatrix(p,pcTraits),E.map(e=>e.code),pcTraits.map(L));
+  }
+  if(sel.has('A5')){
+    if(!pcaRes){
+      out.sections.push({id:'A5',title:'Principal component analysis',
+        note:'Needs at least three entries with complete means for two or more traits.',tables:[]});
+    } else {
+      const nd=Math.min(5,pcaRes.comps.length);
+      const dims=Array.from({length:nd},(_,i)=>'PC'+(i+1));
+      out.sections.push({id:'A5',title:'Principal component analysis',
+        note:`${pcTraits.length} traits with complete means across ${E.length} entries.`,
+        figures:['scree','biplot'],
+        tables:[
+          tbl('A5_PCA_Eigenvalues','Eigenvalues',['Principal component','Eigenvalue','Variance explained (%)','Cumulative variance (%)'],
+            pcaRes.comps.slice(0,10).map(c=>['PC'+c.pc,fmt(c.eigen,4),fmt(c.pct,2),fmt(c.cum,2)])),
+          tbl('A5_PCA_Loadings','Loadings',['index',...dims],
+            pcaRes.loadings.map((l,i)=>[pcTraits[i].n,...dims.map(d=>fmt(l[d],3))])),
+          tbl('A5_PCA_Scores','Scores',['index',...dims],
+            pcaRes.scores.map((s,i)=>[E[i].name,...dims.map(d=>fmt(s[d],3))]))]});
+      out.pca={res:pcaRes,traits:pcTraits};
+    }
+  }
+
+  /* ---------- A6 variance components ---------- */
+  if(sel.has('A6')){
+    const rows=anTraits.map(t=>{const a=an[t.k];
+      return [t.n,codeOf(p,t),fmt(a.grand,3),fmt(a.vg,4),fmt(a.ve,4),fmt(a.vp,4),
+        fmt(a.gcv,2),fmt(a.pcv,2),fmt(a.h2,3),fmt(a.h2*100,1),fmt(a.ga,3),fmt(a.gam,2)];});
+    out.sections.push({id:'A6',title:'Variance components and genetic parameters',
+      note:'σ²g = (MSg − MSe)/r, σ²e = MSe, σ²p = σ²g + σ²e. GA uses k = 2.06 at 5% selection. Negative components are set to zero.',
+      tables:[tbl('A6_Variance_Components','Variance components',
+        ['Trait','Code','Mean','σ²g','σ²e','σ²p','GCV%','PCV%','h² broad','h² (%)','GA','GAM%'],rows)]});
+  }
+
+  /* ---------- A6b genetic correlations ---------- */
+  if(sel.has('A6b')&&anTraits.length>1){
+    const gc=S.geneticCorrelations(anTraits.map(t=>({key:t.k,rows:obs(p,t.k)})),design);
+    const names=anTraits.map(L);
+    const mk=(M,sheet,title)=>tbl(sheet,title,['index',...names],
+      names.map((n,i)=>[n,...M[i].map(v=>v===null?'':fmt(v,3))]));
+    out.sections.push({id:'A6b',title:'Genotypic, phenotypic and environmental correlation',
+      note:'From the analysis of covariance. Genotypic values can exceed ±1 when variance components are small; they are shown as computed.',
+      tables:[mk(gc.rg,'A6_Genotypic_corr','Genotypic correlation (rg)'),
+              mk(gc.rp,'A6_Phenotypic_corr','Phenotypic correlation (rp)'),
+              mk(gc.re,'A6_Environmental_corr','Environmental correlation (re)')]});
+  }
+
+  /* ---------- A6c path ---------- */
+  if(sel.has('A6c')){
+    const depT=traits.find(t=>t.k===dep)||traits[traits.length-1];
+    let ind=completeTraitSet(p,traits).filter(t=>t.k!==(depT&&depT.k));
+    // a path analysis cannot invert a singular matrix, so drop near-duplicates first
+    const dropped=[];
+    {
+      const kept=[];
+      ind.forEach(t=>{
+        const a=p.entries.map(e=>entryMean(p,e.id,t.k));
+        const clash=kept.find(u=>{
+          const b=p.entries.map(e=>entryMean(p,e.id,u.k));
+          const c=S.pearson(a,b); return c&&Math.abs(c.r)>=0.98;
+        });
+        if(clash) dropped.push(t.n+' (duplicates '+clash.n+')'); else kept.push(t);
+      });
+      ind=kept;
+      // the correlation matrix can only be inverted when entries exceed traits:
+      // rank is at most n-1, so keep the strongest predictors of the dependent trait
+      const limit=Math.max(2,p.entries.length-2);
+      if(ind.length>limit){
+        const yv=p.entries.map(e=>entryMean(p,e.id,depT.k));
+        const scored=ind.map(t=>{
+          const c=S.pearson(p.entries.map(e=>entryMean(p,e.id,t.k)),yv);
+          return {t,r:c?Math.abs(c.r):0};
+        }).sort((x,y)=>y.r-x.r);
+        scored.slice(limit).forEach(x=>dropped.push(x.t.n+' (beyond the '+limit+'-trait limit)'));
+        ind=scored.slice(0,limit).map(x=>x.t);
+      }
+    }
+    if(!depT||ind.length<2){
+      out.sections.push({id:'A6c',title:'Path coefficient analysis',
+        note:'Needs a dependent trait and at least two independent traits with complete means.',tables:[]});
+    } else {
+      const M=entryMeansMatrix(p,ind), y=E.map(e=>entryMean(p,e.id,depT.k));
+      const k=ind.length, R=[];
+      for(let i=0;i<k;i++){R[i]=[];for(let j=0;j<k;j++){
+        if(i===j){R[i][j]=1;continue;}
+        const c=S.pearson(M.map(r=>r[i]),M.map(r=>r[j])); R[i][j]=c?c.r:0;}}
+      const rY=ind.map((_,i)=>{const c=S.pearson(M.map(r=>r[i]),y);return c?c.r:0;});
+      const pa=S.path(R,rY,ind.map(L));
+      if(!pa){ out.sections.push({id:'A6c',title:'Path coefficient analysis',
+        note:`The correlation matrix could not be inverted. With ${p.entries.length} entries a path analysis can carry at most ${Math.max(2,p.entries.length-2)} independent traits, and those traits must not be collinear.`,tables:[]}); }
+      else{
+        const rows=ind.map((t,i)=>[t.n,fmt(pa.direct[i],4),
+          ...ind.map((_,j)=>i===j?'(direct)':fmt(pa.indirect[i][j],4)),fmt(rY[i],3)]);
+        out.sections.push({id:'A6c',title:'Path coefficient analysis',
+          note:`Dependent trait: ${depT.n}. Residual effect ${fmt(pa.residual,4)}, R² ${fmt(pa.R2,4)}.`
+            +(dropped.length?` Dropped for collinearity: ${dropped.join(', ')}.`:''),
+          figures:['path'],
+          tables:[tbl('A6_Path_Analysis','Direct and indirect effects',
+            ['Trait','Direct effect',...ind.map(t=>'via '+L(t)),'Correlation with '+(codeOf(p,depT)||depT.n)],rows)]});
+        out.path={pa,dep:depT,ind};
+      }
+    }
+  }
+
+  /* ---------- A7 distance + clusters ---------- */
+  let Dq=null, cutQ=null;
+  if(sel.has('A7')||sel.has('C1')){
+    const ts=pcTraits.length?pcTraits:completeTraitSet(p,traits);
+    if(ts.length>=2&&E.length>=3){
+      const Z=S.standardise(entryMeansMatrix(p,ts));
+      Dq=S.euclidean(Z);
+      const cl=S.cluster(Dq,lab,'upgma');
+      cutQ=cl.cut(Math.min(4,E.length-1));
+      const ward=pcaRes?S.cluster(S.euclidean(pcaRes.scores.map(s=>
+        Array.from({length:Math.min(5,pcaRes.comps.length)},(_,i)=>s['PC'+(i+1)]||0))),lab,'ward'):null;
+      if(sel.has('A7')){
+        const names=E.map(e=>e.name);
+        out.sections.push({id:'A7',title:'Genetic distance and clustering',
+          note:`Euclidean distance on standardised means of ${ts.length} traits. UPGMA grouping, with Ward clustering on the PCA scores for comparison.`,
+          figures:['dendroQ'],
+          tables:[
+            tbl('A7_Distance','Euclidean distance matrix',['Entry',...names],
+              names.map((n,i)=>[n,...Dq[i].map(v=>fmt(v,3))])),
+            tbl('A7_Clusters','Cluster membership',
+              ['Entry','Cluster (k=2)','Cluster (k=3)','Cluster (k=4)','Cluster (k=5)','PCA-Ward group'],
+              names.map((n,i)=>[n,cl.cut(2)[i],cl.cut(3)[i],cl.cut(4)[i],cl.cut(5)[i],
+                ward?ward.cut(Math.min(4,E.length-1))[i]:'—']))]});
+        out.dendroQ={cl,labels:E.map(e=>e.code)};
+      }
+      out.clQ={cl,ward};
+    }
+  }
+
+  /* ---------- A8 within-plot uniformity ---------- */
+  if(sel.has('A8')&&p.plants>1){
+    const rows=traits.map(t=>{
+      let within=[],plots=0;
+      E.forEach(e=>{for(let r=1;r<=p.reps;r++){
+        const v=plotValues(p,e.id,r,t.k);
+        if(v.length>1){within.push(S.sd(v)); plots++;}
+      }});
+      const gm=S.mean(E.map(e=>entryMean(p,e.id,t.k)).filter(x=>x!==null));
+      const msd=within.length?S.mean(within):null;
+      return [t.n,codeOf(p,t),plots,msd===null?'—':fmt(msd,3),
+        msd===null||!gm?'—':fmt(msd/gm*100,2)];
+    });
+    out.sections.push({id:'A8',title:'Within-plot uniformity',
+      note:`Plant-to-plant variation inside each plot, averaged over ${E.length*p.reps} plots.`,
+      tables:[tbl('A8_Within_Plot','Within-plot uniformity',
+        ['Trait','Code','Plots with ≥2 plants','Mean within-plot SD','Within-plot CV%'],rows)]});
+  }
+
+  /* ---------- qualitative core ---------- */
+  const qualStats=(t)=>{
+    const byEntry=E.map(e=>{
+      const counts={};
+      for(let r=1;r<=p.reps;r++)for(let pl=1;pl<=p.plants;pl++){
+        const v=cell(p,e.id,r,pl).qual[t.k]; if(filled(v))counts[v]=(counts[v]||0)+1;
+      }
+      const tot=S.sum(Object.values(counts));
+      const ks=Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+      return {e,counts,tot,modal:ks[0]||'',modalN:counts[ks[0]]||0,
+        classes:ks.length,H:S.shannon(Object.values(counts)),
+        freq:ks.map(k=>`${k}: ${counts[k]}`).join('; ')};
+    });
+    const states=[...new Set(qualRecords(p,t.k).map(x=>x.v))].sort();
+    const table=byEntry.map(b=>states.map(s=>b.counts[s]||0));
+    const cv=S.cramersV(table);
+    const all={}; qualRecords(p,t.k).forEach(x=>all[x.v]=(all[x.v]||0)+1);
+    const H=S.shannon(Object.values(all)), Hmax=Math.log(states.length||1);
+    return {byEntry,states,cv,H,Hmax,ratio:Hmax?H/Hmax:0,
+      meanWithin:S.mean(byEntry.map(b=>b.H)),fixed:byEntry.filter(b=>b.classes===1).length};
+  };
+  const QS={}; if(sel.has('B1')||sel.has('B2')||sel.has('B2b')) quals.forEach(t=>QS[t.k]=qualStats(t));
+
+  if(sel.has('B1')){
+    const rows=[];
+    quals.forEach(t=>QS[t.k].byEntry.forEach(b=>rows.push([t.n,b.e.name,b.modal,
+      `${b.modalN} / ${b.tot}`,fmt(b.tot?b.modalN/b.tot*100:0,2),b.classes,b.freq,fmt(b.H,3)])));
+    out.sections.push({id:'B1',title:'Descriptor frequency by entry',
+      note:`${quals.length} polymorphic descriptors${mono.length?`; ${mono.length} monomorphic and excluded`:''}.`,
+      tables:[tbl('B1_Qual_Frequency','Frequency and modal class',
+        ['Trait','Line','Modal class','Modal count','Modal %','No. of classes','Frequency distribution','Within-line H′'],rows)]});
+  }
+  if(sel.has('B2')){
+    const rows=quals.map(t=>{const q=QS[t.k];
+      const cls=q.ratio>=0.7?'High':q.ratio>=0.4?'Moderate':'Low';
+      return [t.n,q.states.length,fmt(q.H,3),fmt(q.Hmax,3),fmt(q.ratio,3),cls,
+        fmt(q.cv.chi2,1),fmt(q.cv.v,3),stars(q.cv.p),sigWord(q.cv.p),fmt(q.meanWithin,3),q.fixed];})
+      .sort((a,b)=>+b[2]-+a[2]);
+    out.sections.push({id:'B2',title:'Shannon diversity and descriptor association',
+      note:'H′ on pooled plant records. Chi-square and Cramér′s V test the entry × class table.',
+      figures:['shannon'],
+      tables:[tbl('B2_Shannon','Shannon diversity',
+        ['Trait','k','H′','H′max','H′/H′max','Diversity class','Chi-square',"Cramér's V",'Sig.','Significance','Mean within-line H′','Lines fixed'],rows)]});
+    out.shannon=rows;
+  }
+  if(sel.has('B2b')){
+    const perEntry=E.map((e,i)=>{
+      const Hs=quals.map(t=>QS[t.k]?QS[t.k].byEntry[i]:null).filter(Boolean);
+      const fixed=Hs.filter(b=>b.classes===1).length;
+      const modal=Hs.length?S.mean(Hs.map(b=>b.tot?b.modalN/b.tot*100:0)):0;
+      return {e,mean:Hs.length?S.mean(Hs.map(b=>b.H)):0,fixed,modal};
+    }).sort((a,b)=>a.mean-b.mean);
+    out.sections.push({id:'B2b',title:'Line uniformity ranking',
+      note:'Lower mean within-line H′ means a more uniform line.',
+      figures:['uniformity'],
+      tables:[tbl('B2_Uniformity','Uniformity ranking',
+        ['Rank','Line','Mean within-line H′','Descriptors fixed','Mean modal %','Mean off-type %'],
+        perEntry.map((x,i)=>[i+1,x.e.name,fmt(x.mean,3),x.fixed,fmt(x.modal,1),fmt(100-x.modal,1)]))]});
+    out.uniformity=perEntry;
+  }
+  if(sel.has('B3')){
+    const rowsIn=[], owner=[];
+    E.forEach((e,ei)=>{for(let r=1;r<=p.reps;r++)for(let pl=1;pl<=p.plants;pl++){
+      const rec=quals.map(t=>cell(p,e.id,r,pl).qual[t.k]);
+      if(rec.every(filled)){rowsIn.push(rec);owner.push(ei);}
+    }});
+    const m=quals.length>=2&&rowsIn.length>=5?S.mca(rowsIn,quals.map(t=>t.n)):null;
+    if(!m){ out.sections.push({id:'B3',title:'Multiple correspondence analysis',
+      note:'Needs at least two polymorphic descriptors scored on five or more complete plants.',tables:[]}); }
+    else{
+      const nd=m.nd, dims=Array.from({length:nd},(_,i)=>'Dim'+(i+1));
+      const centro=E.map((e,ei)=>{
+        const rows=m.rowCoords.filter((_,i)=>owner[i]===ei);
+        const o={name:e.name,code:e.code};
+        dims.forEach(d=>o[d]=rows.length?S.mean(rows.map(r=>r[d])):0);
+        return o;});
+      out.sections.push({id:'B3',title:'Multiple correspondence analysis',
+        note:`${rowsIn.length} complete plant records over ${quals.length} descriptors. Inertia is Benzécri adjusted.`,
+        figures:['mca'],
+        tables:[
+          tbl('B3_MCA_Eigenvalues','Eigenvalues',
+            ['Dimension','Raw eigenvalue','Raw inertia (%)','Benzécri-adjusted (%)','Cumulative adjusted (%)'],
+            m.comps.map(c=>[c.dim,fmt(c.eigen,4),fmt(c.rawPct,2),fmt(c.adjPct,2),fmt(c.cumAdj,2)])),
+          tbl('B3_MCA_Scores','Entry scores',['Line',...dims],
+            centro.map(c=>[c.name,...dims.map(d=>fmt(c[d],3))])),
+          tbl('B3_MCA_Categories','Category coordinates',
+            ['Trait','State',...dims,'Contrib Dim1 (%)','Contrib Dim2 (%)'],
+            m.catCoords.map(c=>[c.trait,c.state,...dims.map(d=>fmt(c[d],3)),
+              fmt(c.contrib1,2),fmt(c.contrib2??0,2)]))]});
+      out.mca={m,centro};
+    }
+  }
+  let Dql=null,cutL=null;
+  if((sel.has('B4')||sel.has('C1'))&&quals.length>=2){
+    const OM=qualOrdinalMeans(p,quals).map(r=>r.map(v=>v===null?0:v));
+    Dql=S.euclidean(OM);
+    const cl=S.cluster(Dql,lab,'upgma');
+    cutL=cl.cut(Math.min(4,E.length-1));
+    if(sel.has('B4')){
+      const names=E.map(e=>e.name);
+      out.sections.push({id:'B4',title:'Qualitative distance and clustering',
+        note:`Euclidean distance on mean descriptor state scores over ${quals.length} descriptors.`,
+        figures:['dendroL'],
+        tables:[
+          tbl('B4_Qual_Distance','Qualitative distance matrix',['Entry',...names],
+            names.map((n,i)=>[n,...Dql[i].map(v=>fmt(v,3))])),
+          tbl('B4_Qual_Clusters','Cluster membership',
+            ['Entry','Cluster (k=2)','Cluster (k=3)','Cluster (k=4)','Cluster (k=5)'],
+            names.map((n,i)=>[n,cl.cut(2)[i],cl.cut(3)[i],cl.cut(4)[i],cl.cut(5)[i]]))]});
+      out.dendroL={cl,labels:E.map(e=>e.code)};
+    }
+  }
+  if(sel.has('B5')&&quals.length>1){
+    const OM=qualOrdinalMeans(p,quals);
+    const k=quals.length, R=[],P=[],V=[];
+    for(let i=0;i<k;i++){R[i]=[];P[i]=[];V[i]=[];}
+    const sig=[];
+    for(let i=0;i<k;i++)for(let j=0;j<k;j++){
+      if(i===j){R[i][j]=1;P[i][j]=0;V[i][j]=1;continue;}
+      const a=[],b=[];
+      OM.forEach(row=>{if(row[i]!==null&&row[j]!==null){a.push(row[i]);b.push(row[j]);}});
+      const c=a.length>=3?S.pearson(a,b):null;
+      R[i][j]=c?c.r:null; P[i][j]=c?c.p:null;
+      if(c&&i<j&&c.p<0.05) sig.push([quals[i].n,quals[j].n,fmt(c.r,3),pStr(c.p),stars(c.p),sigWord(c.p)]);
+      // Cramér's V on plant level
+      const recI=qualRecords(p,quals[i].k), recJ=qualRecords(p,quals[j].k);
+      const key=x=>x.entry.id+'|'+x.rep+'|'+x.plant;
+      const mj={}; recJ.forEach(x=>mj[key(x)]=x.v);
+      const si=[...new Set(recI.map(x=>x.v))].sort(), sj=[...new Set(recJ.map(x=>x.v))].sort();
+      const T=si.map(()=>sj.map(()=>0));
+      recI.forEach(x=>{const o=mj[key(x)]; if(o!==undefined)T[si.indexOf(x.v)][sj.indexOf(o)]++;});
+      const cv=S.cramersV(T); V[i][j]=cv?cv.v:null;
+    }
+    sig.sort((x,y)=>Math.abs(+y[2])-Math.abs(+x[2]));
+    const names=quals.map(t=>t.n);
+    out.sections.push({id:'B5',title:'Descriptor × descriptor association',
+      note:'Pearson on mean state scores per entry, and Cramér′s V on the plant-level contingency tables.',
+      tables:[
+        tbl('B5_QualQual_Pearson','Correlation (lower triangle)',['index',...names],
+          names.map((n,i)=>[n,...names.map((_,j)=>j>i?'':
+            (R[i][j]===null?'—':fmt(R[i][j],3)+(i===j?'':stars(P[i][j])==='ns'?'':stars(P[i][j]))))])),
+        tbl('B5_QualQual_sig','Significant descriptor pairs',
+          ['Descriptor 1','Descriptor 2','r','p','Sig.','Significance'],sig),
+        tbl('B5_QualQual_CramersV',"Cramér's V",['index',...names],
+          names.map((n,i)=>[n,...V[i].map(v=>v===null?'':fmt(v,3))]))]});
+  }
+  if(sel.has('B6')&&quals.length&&traits.length){
+    const OM=qualOrdinalMeans(p,quals);
+    const long=[], matrix=[];
+    quals.forEach((q,qi)=>{
+      const row=[q.n];
+      traits.forEach((t,ti)=>{
+        const a=[],b=[];
+        E.forEach((e,ei)=>{const x=OM[ei][qi], y=entryMean(p,e.id,t.k);
+          if(x!==null&&y!==null){a.push(x);b.push(y);}});
+        const c=a.length>=3?S.pearson(a,b):null;
+        long.push([q.n,t.n,codeOf(p,t),c?fmt(c.r,3):'—',c?pStr(c.p):'—',c?stars(c.p):'—',c?sigWord(c.p):'—']);
+        row.push(c?fmt(c.r,3):'');
+      });
+      matrix.push(row);
+    });
+    out.sections.push({id:'B6',title:'Qualitative × quantitative correlation',
+      note:'Descriptor state score against trait means, across entries.',
+      tables:[
+        tbl('B6_QualQuant_corr','Pairwise correlation',
+          ['Qualitative descriptor','Quantitative trait','Code','r','p','Sig.','Significance'],long),
+        tbl('B6_QualQuant_matrix','Correlation matrix',
+          ['Qualitative descriptor',...traits.map(L)],matrix)]});
+  }
+
+  /* ---------- C1 ---------- */
+  if(sel.has('C1')){
+    if(!Dq||!Dql){
+      out.sections.push({id:'C1',title:'Mantel test and cluster concordance',
+        note:'Needs both a quantitative and a qualitative distance matrix. Run the A7 and B4 procedures together.',tables:[]});
+    } else {
+      const mt=S.mantel(Dq,Dql,999);
+      const agree=S.clusterAgreement(cutQ,cutL);
+      const wardCut=out.clQ&&out.clQ.ward?out.clQ.ward.cut(Math.min(4,E.length-1)):null;
+      out.sections.push({id:'C1',title:'Mantel test and cluster concordance',
+        note:'Permutation test between the two distance matrices.',
+        tables:[
+          tbl('C1_Mantel','Mantel test',['Statistic','Value'],[
+            ['Mantel r',fmt(mt.r,4)],
+            [`two-tailed p (${mt.perms} permutations)`,fmt(mt.p,4)],
+            ['Significance',sigWord(mt.p)],
+            ['shared variance (%)',fmt(mt.shared,1)],
+            ['UPGMA quantitative vs qualitative agreement (%)',fmt(agree,1)],
+            ['PCA-Ward vs qualitative agreement (%)',wardCut?fmt(S.clusterAgreement(wardCut,cutL),1):'—']]),
+          tbl('C1_Concordance','Cluster concordance',
+            ['Entry','UPGMA quantitative','PCA-Ward quantitative','UPGMA qualitative'],
+            E.map((e,i)=>[e.name,cutQ[i],wardCut?wardCut[i]:'—',cutL[i]]))]});
+    }
+  }
+
+  /* ---------- D1 Line x Tester ---------- */
+  if(sel.has('D1')&&p.design==='LT'){
+    const ts=anTraits;
+    const anovaRows=[],gcaL=[],gcaT=[],scaRows=[],varRows=[];
+    ts.forEach(t=>{
+      const recs=[];
+      p.entries.filter(e=>e.type==='cross').forEach(e=>{
+        for(let r=1;r<=p.reps;r++){const m=plotMean(p,e.id,r,t.k);
+          if(m!==null)recs.push({line:e.line,tester:e.tester,r,y:m});}
+      });
+      const lt=S.lineTester(recs,design);
+      if(!lt)return;
+      lt.table.forEach(row=>anovaRows.push([t.n,row.src,row.df,fmt(row.ss,4),
+        row.ms!==undefined?fmt(row.ms,4):'',row.F!==undefined&&row.F!==null?fmt(row.F,2):'',
+        row.p!==undefined?pStr(row.p):'',row.p!==undefined?stars(row.p):'',row.p!==undefined?sigWord(row.p):'']));
+      lt.gcaLines.forEach(g=>gcaL.push([t.n,g.name,fmt(g.effect,4),fmt(g.se,4),
+        fmt(Math.abs(g.effect/g.se),2),stars(S.pT(Math.abs(g.effect/g.se),lt.dfErr))]));
+      lt.gcaTesters.forEach(g=>gcaT.push([t.n,g.name,fmt(g.effect,4),fmt(g.se,4),
+        fmt(Math.abs(g.effect/g.se),2),stars(S.pT(Math.abs(g.effect/g.se),lt.dfErr))]));
+      lt.sca.forEach(s2=>scaRows.push([t.n,s2.line,s2.tester,fmt(s2.mean,3),fmt(s2.effect,4),fmt(s2.se,4),
+        stars(S.pT(Math.abs(s2.effect/s2.se),lt.dfErr))]));
+      varRows.push([t.n,fmt(lt.varGCA,4),fmt(lt.varSCA,4),
+        lt.ratio===null?'—':fmt(lt.ratio,3),fmt(lt.varA,4),fmt(lt.varD,4),
+        lt.degreeDominance===null?'—':fmt(lt.degreeDominance,3),
+        lt.h2n===null?'—':fmt(lt.h2n,3),lt.h2b===null?'—':fmt(lt.h2b,3),
+        fmt(lt.contribLines,1),fmt(lt.contribTesters,1),fmt(lt.contribLT,1)]);
+    });
+    out.sections.push({id:'D1',title:'Line × Tester analysis',
+      note:'Kempthorne (1957). Combining ability uses the crosses only. σ²A = 2σ²gca with inbred parents (F = 1), σ²D = σ²sca.',
+      tables:[
+        tbl('D1_LT_ANOVA','Line × Tester ANOVA',
+          ['Trait','Source','df','SS','MS','F','p','Sig.','Significance'],anovaRows),
+        tbl('D1_GCA_lines','GCA effects of lines',
+          ['Trait','Line','GCA effect','SE','t','Sig.'],gcaL),
+        tbl('D1_GCA_testers','GCA effects of testers',
+          ['Trait','Tester','GCA effect','SE','t','Sig.'],gcaT),
+        tbl('D1_SCA_crosses','SCA effects of crosses',
+          ['Trait','Line','Tester','Cross mean','SCA effect','SE','Sig.'],scaRows),
+        tbl('D1_Variance','Combining ability variance',
+          ['Trait','σ²gca','σ²sca','σ²gca/σ²sca','σ²A','σ²D','Degree of dominance','h² narrow','h² broad',
+           'Lines contribution (%)','Testers (%)','L×T (%)'],varRows)]});
+  }
+  return out;
+}
+
+/* ============================================================
+   FIGURES (SVG strings)
+   ============================================================ */
+const PAL={leaf:'#38872C',bright:'#6CC24A',seed:'#7A4A12',ink:'#1A231C',line:'#DCE8D6',mut:'#4C5A4F'};
+function svgWrap(w,h,inner){
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"
+    font-family="IBM Plex Sans, Arial, sans-serif"><rect width="${w}" height="${h}" fill="#fff"/>${inner}</svg>`;
+}
+function figScree(res){
+  const W=560,H=330,pad=52, cs=res.comps.slice(0,8), max=Math.max(...cs.map(c=>c.pct));
+  const bw=(W-2*pad)/cs.length;
+  let s=`<text x="${W/2}" y="24" text-anchor="middle" font-size="13" font-weight="600" fill="${PAL.ink}">Scree plot</text>`;
+  s+=`<line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="${PAL.line}"/>`;
+  s+=`<line x1="${pad}" y1="${pad-10}" x2="${pad}" y2="${H-pad}" stroke="${PAL.line}"/>`;
+  cs.forEach((c,i)=>{
+    const h=(c.pct/max)*(H-pad-pad+6), x=pad+i*bw+bw*0.2, y=H-pad-h;
+    s+=`<rect x="${x}" y="${y}" width="${bw*0.6}" height="${h}" fill="${i<2?PAL.leaf:PAL.bright}" rx="2"/>`;
+    s+=`<text x="${x+bw*0.3}" y="${y-5}" text-anchor="middle" font-size="9" fill="${PAL.mut}">${c.pct.toFixed(1)}%</text>`;
+    s+=`<text x="${x+bw*0.3}" y="${H-pad+14}" text-anchor="middle" font-size="10" fill="${PAL.mut}">PC${c.pc}</text>`;
+  });
+  s+=`<text x="16" y="${H/2}" transform="rotate(-90 16 ${H/2})" text-anchor="middle" font-size="10" fill="${PAL.mut}">Variance explained (%)</text>`;
+  return svgWrap(W,H,s);
+}
+function figBiplot(res){
+  const W=600,H=480,pad=50;
+  const sx=res.scores.map(s=>s.x),sy=res.scores.map(s=>s.y);
+  const lx=res.loadings.map(l=>l.x),ly=res.loadings.map(l=>l.y);
+  const sMax=Math.max(...sx.map(Math.abs),...sy.map(Math.abs),1e-3);
+  const lMax=Math.max(...lx.map(Math.abs),...ly.map(Math.abs),1e-3);
+  const k=sMax/lMax*0.85;
+  const m=Math.max(...[...sx,...sy,...lx.map(v=>v*k),...ly.map(v=>v*k)].map(Math.abs))*1.15;
+  const X=v=>pad+((v+m)/(2*m))*(W-2*pad), Y=v=>H-pad-((v+m)/(2*m))*(H-2*pad);
+  let s=`<text x="${W/2}" y="22" text-anchor="middle" font-size="13" font-weight="600" fill="${PAL.ink}">PCA biplot</text>`;
+  s+=`<rect x="${pad}" y="${pad}" width="${W-2*pad}" height="${H-2*pad}" fill="#FCFDFB" stroke="${PAL.line}"/>`;
+  s+=`<line x1="${pad}" y1="${Y(0)}" x2="${W-pad}" y2="${Y(0)}" stroke="${PAL.line}" stroke-dasharray="3 3"/>`;
+  s+=`<line x1="${X(0)}" y1="${pad}" x2="${X(0)}" y2="${H-pad}" stroke="${PAL.line}" stroke-dasharray="3 3"/>`;
+  res.loadings.forEach(l=>{
+    s+=`<line x1="${X(0)}" y1="${Y(0)}" x2="${X(l.x*k)}" y2="${Y(l.y*k)}" stroke="${PAL.seed}" stroke-width="1" opacity="0.55"/>`;
+    s+=`<text x="${X(l.x*k)}" y="${Y(l.y*k)-4}" font-size="8.5" fill="${PAL.seed}" text-anchor="middle">${esc(String(l.name).slice(0,18))}</text>`;});
+  res.scores.forEach(p2=>{
+    s+=`<circle cx="${X(p2.x)}" cy="${Y(p2.y)}" r="4.5" fill="${PAL.leaf}" stroke="#fff" stroke-width="1.2"/>`;
+    s+=`<text x="${X(p2.x)+7}" y="${Y(p2.y)+3.5}" font-size="10" fill="${PAL.ink}">${esc(p2.label)}</text>`;});
+  s+=`<text x="${W/2}" y="${H-12}" text-anchor="middle" font-size="10.5" fill="${PAL.mut}">PC1 — ${res.comps[0].pct.toFixed(1)}%</text>`;
+  s+=`<text x="14" y="${H/2}" transform="rotate(-90 14 ${H/2})" text-anchor="middle" font-size="10.5" fill="${PAL.mut}">PC2 — ${(res.comps[1]?res.comps[1].pct:0).toFixed(1)}%</text>`;
+  return svgWrap(W,H,s);
+}
+function figHeat(names,R){
+  const n=names.length, cell=Math.max(16,Math.min(30,420/n));
+  const left=150, top=130, W=left+n*cell+30, H=top+n*cell+30;
+  let s=`<text x="${W/2}" y="20" text-anchor="middle" font-size="13" font-weight="600" fill="${PAL.ink}">Correlation heatmap</text>`;
+  names.forEach((nm,i)=>{
+    s+=`<text x="${left-6}" y="${top+i*cell+cell*0.7}" text-anchor="end" font-size="9" fill="${PAL.mut}">${esc(nm.slice(0,22))}</text>`;
+    s+=`<text x="${left+i*cell+cell*0.65}" y="${top-6}" font-size="9" fill="${PAL.mut}" transform="rotate(-60 ${left+i*cell+cell*0.65} ${top-6})">${esc(nm.slice(0,22))}</text>`;});
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){
+    const r=R[i][j];
+    const col=r===null?'#F2F6F0':r>0
+      ?`rgb(${Math.round(255-167*Math.abs(r))},${Math.round(255-120*Math.abs(r))},${Math.round(255-211*Math.abs(r))})`
+      :`rgb(${Math.round(255-133*Math.abs(r))},${Math.round(255-181*Math.abs(r))},${Math.round(255-237*Math.abs(r))})`;
+    s+=`<rect x="${left+j*cell}" y="${top+i*cell}" width="${cell-1}" height="${cell-1}" fill="${col}"/>`;
+    if(n<=14&&r!==null) s+=`<text x="${left+j*cell+cell/2}" y="${top+i*cell+cell*0.66}" text-anchor="middle"
+      font-size="8" fill="${Math.abs(r)>0.6?'#fff':PAL.ink}">${r.toFixed(2)}</text>`;
+  }
+  return svgWrap(W,H,s);
+}
+function figDendro(cl,labels,title){
+  const n=labels.length, W=620, rowH=26, H=90+n*rowH;
+  const maxH=cl.root.height||1, left=140, right=W-40;
+  const order=[]; (function walk(nd){ if(!nd.children){order.push(nd.members[0]);return;}
+    walk(nd.children[0]); walk(nd.children[1]); })(cl.root);
+  const ypos={}; order.forEach((m,i)=>ypos[m]=70+i*rowH);
+  const X=h=>right-(h/maxH)*(right-left);
+  let s=`<text x="${W/2}" y="26" text-anchor="middle" font-size="13" font-weight="600" fill="${PAL.ink}">${esc(title)}</text>`;
+  function draw(nd){
+    if(!nd.children){const m=nd.members[0];
+      s+=`<text x="${right+6}" y="${ypos[m]+4}" font-size="10" fill="${PAL.ink}">${esc(labels[m])}</text>`;
+      return {y:ypos[m],x:right};}
+    const a=draw(nd.children[0]), b=draw(nd.children[1]);
+    const x=X(nd.height), y=(a.y+b.y)/2;
+    s+=`<path d="M${a.x} ${a.y} H${x} V${b.y} H${b.x}" fill="none" stroke="${PAL.leaf}" stroke-width="1.4"/>`;
+    return {y,x};
+  }
+  draw(cl.root);
+  s+=`<line x1="${left}" y1="${H-40}" x2="${right}" y2="${H-40}" stroke="${PAL.line}"/>`;
+  for(let i=0;i<=4;i++){const h=maxH*i/4, x=X(h);
+    s+=`<line x1="${x}" y1="${H-44}" x2="${x}" y2="${H-36}" stroke="${PAL.line}"/>
+        <text x="${x}" y="${H-24}" text-anchor="middle" font-size="9" fill="${PAL.mut}">${h.toFixed(1)}</text>`;}
+  s+=`<text x="${(left+right)/2}" y="${H-8}" text-anchor="middle" font-size="10" fill="${PAL.mut}">Distance</text>`;
+  return svgWrap(W,H,s);
+}
+function figBars(title,labels,values,xlabel){
+  const n=labels.length, rowH=22, W=600, H=70+n*rowH+30;
+  const left=200, right=W-70, max=Math.max(...values,1e-6);
+  let s=`<text x="${W/2}" y="26" text-anchor="middle" font-size="13" font-weight="600" fill="${PAL.ink}">${esc(title)}</text>`;
+  labels.forEach((l,i)=>{
+    const y=56+i*rowH, w=(values[i]/max)*(right-left);
+    s+=`<text x="${left-8}" y="${y+12}" text-anchor="end" font-size="10" fill="${PAL.mut}">${esc(String(l).slice(0,30))}</text>`;
+    s+=`<rect x="${left}" y="${y+3}" width="${Math.max(1,w)}" height="13" fill="${PAL.bright}" rx="2"/>`;
+    s+=`<text x="${left+w+6}" y="${y+14}" font-size="9" fill="${PAL.mut}">${values[i].toFixed(3)}</text>`;});
+  s+=`<text x="${(left+right)/2}" y="${H-10}" text-anchor="middle" font-size="10" fill="${PAL.mut}">${esc(xlabel)}</text>`;
+  return svgWrap(W,H,s);
+}
+function figPath(pa){
+  const n=pa.names.length, W=620, H=90+n*34;
+  let s=`<text x="${W/2}" y="26" text-anchor="middle" font-size="13" font-weight="600" fill="${PAL.ink}">Path diagram — direct effects</text>`;
+  const cx=460, cy=H/2;
+  s+=`<circle cx="${cx}" cy="${cy}" r="34" fill="${PAL.leaf}"/><text x="${cx}" y="${cy+4}" text-anchor="middle"
+     font-size="11" fill="#fff">Dependent</text>`;
+  pa.names.forEach((nm,i)=>{
+    const y=60+i*34;
+    s+=`<text x="150" y="${y+4}" text-anchor="end" font-size="10" fill="${PAL.ink}">${esc(String(nm).slice(0,26))}</text>`;
+    const w=Math.min(6,Math.max(0.8,Math.abs(pa.direct[i])*6));
+    s+=`<line x1="156" y1="${y}" x2="${cx-36}" y2="${cy}" stroke="${pa.direct[i]>=0?PAL.leaf:PAL.seed}"
+        stroke-width="${w}" opacity="0.75"/>`;
+    s+=`<text x="${(156+cx-36)/2}" y="${(y+cy)/2-3}" font-size="9" fill="${PAL.mut}">${pa.direct[i].toFixed(3)}</text>`;});
+  s+=`<text x="${W/2}" y="${H-12}" text-anchor="middle" font-size="10" fill="${PAL.mut}">Residual ${pa.residual.toFixed(3)} · R² ${pa.R2.toFixed(3)}</text>`;
+  return svgWrap(W,H,s);
+}
+function buildFigures(p,R){
+  const figs=[];
+  if(R.pca){ figs.push({name:'scree_plot',svg:figScree(R.pca.res)});
+             figs.push({name:'pca_biplot',svg:figBiplot(R.pca.res)}); }
+  const a4=R.sections.find(s2=>s2.id==='A4');
+  if(a4&&a4.heat) figs.push({name:'correlation_heatmap',svg:figHeat(a4.heat.names,a4.heat.R)});
+  if(R.dendroQ) figs.push({name:'dendrogram_quantitative',svg:figDendro(R.dendroQ.cl,R.dendroQ.labels,'UPGMA dendrogram — quantitative')});
+  if(R.dendroL) figs.push({name:'dendrogram_qualitative',svg:figDendro(R.dendroL.cl,R.dendroL.labels,'UPGMA dendrogram — qualitative')});
+  if(R.shannon) figs.push({name:'shannon_diversity',svg:figBars('Shannon diversity by descriptor',
+      R.shannon.map(r=>r[0]),R.shannon.map(r=>+r[2]||0),"H'")});
+  if(R.uniformity) figs.push({name:'line_uniformity',svg:figBars('Within-line uniformity',
+      R.uniformity.map(x=>x.e.name),R.uniformity.map(x=>x.mean),"Mean within-line H' (lower is more uniform)")});
+  const a6=R.sections.find(s2=>s2.id==='A6');
+  if(a6&&a6.tables[0]) figs.push({name:'gcv_pcv',svg:figBars('PCV% by trait',
+      a6.tables[0].rows.map(r=>r[0]),a6.tables[0].rows.map(r=>+r[7]||0),'PCV%')});
+  if(a6&&a6.tables[0]) figs.push({name:'heritability_gam',svg:figBars('Genetic advance as % of mean',
+      a6.tables[0].rows.map(r=>r[0]),a6.tables[0].rows.map(r=>+r[11]||0),'GAM%')});
+  if(R.mca){ const m=R.mca;
+    const sc=m.centro.map(c=>({label:c.code,x:c.Dim1||0,y:c.Dim2||0}));
+    const ld=m.m.catCoords.map(c=>({name:c.state,x:c.Dim1||0,y:c.Dim2||0}));
+    figs.push({name:'mca_biplot',svg:figBiplot({scores:sc,loadings:ld,
+      comps:[{pct:m.m.comps[0].adjPct},{pct:m.m.comps[1]?m.m.comps[1].adjPct:0}]})}); }
+  if(R.path) figs.push({name:'path_diagram',svg:figPath(R.path.pa)});
+  return figs;
+}
+
+</script>
+<script>
+
+/* ============================================================
+   ANALYSIS SCREEN
+   ============================================================ */
+function screenAnalysis(){
+  const p=active();
+  const traits=analysableQuant(p), quals=analysableQual(p);
+  const groups=[...new Set(PROCS.map(x=>x.g))];
+  const avail=x=>{
+    if(x.needLT&&p.design!=='LT') return 'Needs the Line × Tester design';
+    if(x.needPlants&&p.plants<2) return 'Needs more than one plant per plot';
+    if(x.g==='Quantitative'&&!traits.length) return 'No quantitative trait has enough records yet';
+    if(x.g==='Qualitative'&&!quals.length) return 'No descriptor has enough records yet';
+    return null;
+  };
+  if(!VIEW.dep&&traits.length) VIEW.dep=traits[traits.length-1].k;
+  return `<div class="page page-wide">
+    <div class="page-head"><div>
+      <h1 class="t-title">Analysis</h1>
+      <p class="t-small" style="margin-top:2px">Tick everything you need and run it once.
+      ${traits.length} quantitative traits and ${quals.length} descriptors are ready.</p></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" data-act="sel-all">Select all available</button>
+        <button class="btn btn-sm" data-act="sel-none">Clear</button>
+        <button class="btn btn-primary" data-act="run" ${VIEW.sel.size?'':'disabled'}>${icon('play')}Run ${VIEW.sel.size||''} analyses</button>
+      </div></div><div class="hr"></div>
+    <div class="grid-2" style="align-items:start;gap:20px">
+      ${groups.map(g=>`<div class="card card-pad">
+        <h3 class="t-h" style="margin-bottom:10px">${g}</h3>
+        <div style="display:flex;flex-direction:column;gap:2px">
+        ${PROCS.filter(x=>x.g===g).map(x=>{const why=avail(x);
+          return `<button class="procrow" data-act="proc" data-id="${x.id}" ${why?'disabled':''}
+            aria-pressed="${VIEW.sel.has(x.id)}" title="${why?esc(why):''}">
+            <span class="cbox" data-s="${VIEW.sel.has(x.id)?'all':'none'}"></span>
+            <span style="flex:1"><strong>${x.n}</strong><span class="t-meta" style="display:block">${why||x.d}</span></span>
+          </button>`;}).join('')}
+        </div>
+        ${g==='Quantitative'?`<div class="field" style="margin-top:12px">
+          <label class="label">Dependent trait for path analysis</label>
+          <select class="select" data-act="dep">
+            ${traits.map(t=>`<option value="${t.k}" ${VIEW.dep===t.k?'selected':''}>${esc(t.n)}</option>`).join('')}
+          </select></div>`:''}
+      </div>`).join('')}
+    </div>
+    ${VIEW.results?renderResults(VIEW.results):''}
+  </div>`;
+}
+function renderResults(R){
+  const figs=R.figs||[];
+  return `<div class="hr"></div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <h2 class="t-title">Results</h2>
+    <span class="pill pill-leaf">${R.sections.length} procedures</span>
+    ${R.meta.mono&&R.meta.mono.length?`<span class="pill pill-amber">${R.meta.mono.length} monomorphic descriptors excluded</span>`:''}
+    <button class="btn btn-sm" style="margin-left:auto" data-act="go" data-screen="export">${icon('down',14)}Export workbook</button>
+  </div>
+  ${R.sections.map(s=>`
+    <section class="sheet" style="margin-bottom:20px">
+      <div class="sheet-head"><h3 class="t-h">${esc(s.title)}</h3>
+        <span class="t-meta" style="margin-left:auto">${esc(s.note||'')}</span></div>
+      ${(s.tables||[]).map(t=>`
+        <div class="sheet-body" style="padding:0">
+          <div style="padding:10px 16px;border-bottom:1px solid var(--line-2);display:flex;gap:10px;align-items:center">
+            <strong class="t-sh">${esc(t.title)}</strong>
+            <span class="num t-meta">${t.sheet}</span>
+            <span class="t-meta" style="margin-left:auto">${t.rows.length} rows</span></div>
+          <div class="scroll-x" style="max-height:420px"><table class="tbl">
+            <thead><tr>${t.cols.map((c,i)=>`<th class="${i?'num':'sticky-col'}">${esc(c)}</th>`).join('')}</tr></thead>
+            <tbody>${t.rows.slice(0,200).map(r=>`<tr>${r.map((v,i)=>{
+              const sv=String(v??'');
+              const cls=i?'num':'sticky-col';
+              const col=sv==='Significant'?'color:var(--leaf);font-weight:500':
+                        sv==='Non-significant'?'color:var(--ink-3)':
+                        (sv==='**'||sv==='*')?'color:var(--leaf);font-weight:600':'';
+              return `<td class="${cls}" style="${col}">${esc(sv)}</td>`;}).join('')}</tr>`).join('')}
+            </tbody></table></div>
+          ${t.rows.length>200?`<div class="t-meta" style="padding:8px 16px">Showing the first 200 rows. The workbook contains all ${t.rows.length}.</div>`:''}
+        </div>`).join('')}
+      ${figs.filter(f=>(s.figures||[]).some(n=>f.name.includes(n.replace('dendroQ','dendrogram_quantitative')
+        .replace('dendroL','dendrogram_qualitative').replace('scree','scree').replace('biplot','biplot')
+        .replace('mca','mca').replace('path','path').replace('shannon','shannon').replace('uniformity','uniformity'))))
+        .map(f=>`<div class="sheet-body" style="border-top:1px solid var(--line-2)">${f.svg}</div>`).join('')}
+    </section>`).join('')}`;
+}
+
+/* ============================================================
+   EXPORT
+   ============================================================ */
+function dataSheets(p){
+  const out=[];
+  const quals=scopedQual(p), quants=scopedQuant(p);
+  const head=t=>t.n+(codeOf(p,t)?' ('+codeOf(p,t)+')':'')+(t.u?' ['+t.u+']':'');
+  if(quals.length){
+    const rows=[];
+    p.entries.forEach((e,ei)=>{for(let r=1;r<=p.reps;r++)for(let pl=1;pl<=p.plants;pl++){
+      const c=cell(p,e.id,r,pl);
+      rows.push([ei+1,e.name,r,pl,...quals.map(t=>c.qual[t.k]??'')]);}});
+    out.push(tbl('Data_Qual_PlantLevel','Qualitative data, plant level',
+      ['VAR','Genotype','Replication','Plant#',...quals.map(t=>t.n)],rows));
+  }
+  if(quants.length){
+    const rows=[];
+    p.entries.forEach((e,ei)=>{for(let r=1;r<=p.reps;r++)for(let pl=1;pl<=p.plants;pl++){
+      const c=cell(p,e.id,r,pl);
+      rows.push([ei+1,e.name,r,pl,...quants.map(t=>{const v=c.quant[t.k];return filled(v)?+v:'';})]);}});
+    out.push(tbl('Data_Quant_PlantLevel','Quantitative data, plant level',
+      ['VAR','Genotype','Replication','Plant#',...quants.map(head)],rows));
+    const pm=[];
+    p.entries.forEach((e,ei)=>{for(let r=1;r<=p.reps;r++){
+      pm.push([e.name,ei+1,r,...quants.map(t=>{const m=plotMean(p,e.id,r,t.k);return m===null?'':+m.toFixed(4);})]);}});
+    out.push(tbl('Data_Plot_Means','Plot means (mean of plants in each replication)',
+      ['Line','VAR','REP',...quants.map(head)],pm));
+    out.push(tbl('Data_Genotype_Means','Genotype means (mean over replications)',
+      ['Line',...quants.map(head)],
+      p.entries.map(e=>[e.name,...quants.map(t=>{const m=entryMean(p,e.id,t.k);return m===null?'':+m.toFixed(4);})])));
+  }
+  return out;
+}
+function meanSquaresSheet(p){
+  const design=p.design==='LT'?'RCBD':p.design;
+  const rows=[];
+  analysableQuant(p).forEach(t=>{
+    const a=S.anova(obs(p,t.k),design); if(!a||a.insufficient)return;
+    a.table.forEach(r=>rows.push([t.n,codeOf(p,t),r.src,r.df,
+      +r.ss.toFixed(4), r.ms!==undefined?+r.ms.toFixed(4):'',
+      r.F!==undefined&&r.F!==null?+r.F.toFixed(3):'',
+      r.p!==undefined?+r.p.toFixed(5):'', r.p!==undefined?stars(r.p):'',
+      r.p!==undefined?sigWord(r.p):'']));
+  });
+  return tbl('Mean_Squares','Mean squares',
+    ['Trait','Code','Source','df','SS','MS','F','p','Sig.','Significance'],rows);
+}
+function headerRows(p){
+  return [[p.name],['Crop',p.crop],['Design',DESIGN_NAME[p.design],'Replications',p.reps,'Plants per plot',p.plants],
+    ['Location',p.site||'','Season',p.season||'','Investigator',p.investigator||''],
+    ['Exported',new Date().toLocaleString()],[]];
+}
+async function exportWorkbook(){
+  const p=active();
+  if(typeof XLSX==='undefined'){toast('Spreadsheet library did not load');return;}
+  const R=VIEW.results;
+  const sheets=[...dataSheets(p), meanSquaresSheet(p),
+    ...(R?R.sections.flatMap(s=>s.tables||[]):[])];
+  const wb=XLSX.utils.book_new();
+  const used=new Set();
+  sheets.forEach(t=>{
+    let name=(t.sheet||'Sheet').slice(0,31);
+    let i=2; while(used.has(name)){name=(t.sheet.slice(0,28)+'_'+i).slice(0,31);i++;}
+    used.add(name);
+    const aoa=[...(t.sheet.startsWith('Data_')?headerRows(p):[[t.title],[]]),t.cols,...t.rows];
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=t.cols.map((c,i2)=>({wch:Math.max(10,Math.min(34,
+      Math.max(String(c).length+2,...t.rows.slice(0,80).map(r=>String(r[i2]??'').length+2))))}));
+    XLSX.utils.book_append_sheet(wb,ws,name);
+  });
+  const buf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  await save(`${slug(p.name)}_supplementary.xlsx`, new Blob([buf],
+    {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+}
+function svgToPng(svg,scale=2){
+  return new Promise(res=>{
+    const m=svg.match(/viewBox="0 0 (\d+) (\d+)"/);
+    const w=m?+m[1]:600, h=m?+m[2]:400;
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas'); c.width=w*scale; c.height=h*scale;
+      const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+      ctx.drawImage(img,0,0,c.width,c.height);
+      c.toBlob(b=>res(b),'image/png');
+    };
+    img.onerror=()=>res(null);
+    img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg)));
+  });
+}
+async function exportFigures(){
+  const p=active();
+  if(!VIEW.results||!VIEW.results.figs||!VIEW.results.figs.length){toast('Run an analysis first');return;}
+  if(typeof JSZip==='undefined'){toast('Zip library did not load');return;}
+  const zip=new JSZip();
+  for(const f of VIEW.results.figs){
+    zip.file(f.name+'.svg',f.svg);
+    const png=await svgToPng(f.svg,2);
+    if(png) zip.file(f.name+'.png',png);
+  }
+  const blob=await zip.generateAsync({type:'blob'});
+  await save(`${slug(p.name)}_figures.zip`,blob);
+}
+const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,46);
+async function save(filename,blob){
+  try{
+    const dl=window.claude&&await window.claude.use('downloads');
+    if(dl){ await dl.save({filename,data:blob}); toast('Saved '+filename); return; }
+  }catch(e){ if(e&&e.code==='declined'){return;} }
+  try{
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},600);
+    toast('Downloaded '+filename);
+  }catch(e){ toast('The browser blocked the download'); }
+}
+function exportTrialFile(){
+  const p=active(); if(!p){toast('Open a trial first');return;}
+  const payload={format:'cottonbook-trial',version:1,exported:new Date().toISOString(),project:p};
+  save(`${slug(p.name)}.cbk`, new Blob([JSON.stringify(payload,null,1)],{type:'application/json'}));
+}
+function exportLibrary(){
+  if(!DB.projects.length){toast('No trials to back up');return;}
+  const payload={format:'cottonbook-library',version:1,exported:new Date().toISOString(),projects:DB.projects};
+  save(`cottonbook_backup_${new Date().toISOString().slice(0,10)}.cbk`,
+    new Blob([JSON.stringify(payload)],{type:'application/json'}));
+}
+function openTrialFile(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.cbk,.json,application/json';
+  inp.onchange=()=>{
+    const f=inp.files&&inp.files[0]; if(!f)return;
+    const fr=new FileReader();
+    fr.onload=()=>{
+      try{
+        const d=JSON.parse(fr.result);
+        const list=d.projects||(d.project?[d.project]:null);
+        if(!list||!list.length) throw new Error('no trial inside it');
+        let added=0;
+        list.forEach(pr=>{
+          if(!pr||!pr.entries||!pr.data) return;
+          pr.id=uid(); delete pr.exampleOf;
+          if(DB.projects.some(x=>x.name===pr.name)) pr.name=pr.name+' (imported)';
+          DB.projects.unshift(pr); added++;
+        });
+        if(!added) throw new Error('nothing readable inside it');
+        persist(); DB.activeId=null; VIEW.screen='home'; render();
+        toast(added===1?'Trial opened':added+' trials opened');
+      }catch(e){ toast('Could not read that file: '+e.message); }
+    };
+    fr.readAsText(f);
+  };
+  inp.click();
+}
+function screenExport(){
+  const p=active(), R=VIEW.results;
+  const sheetCount=dataSheets(p).length+1+(R?R.sections.reduce((n,s)=>n+(s.tables||[]).length,0):0);
+  return `<div class="page">
+    <div class="page-head"><div><h1 class="t-title">Export</h1>
+      <p class="t-small" style="margin-top:2px">Two downloads: the supplementary workbook, and every figure as a zip.</p></div></div>
+    <div class="hr"></div>
+    <div class="grid-2">
+      <div class="card card-pad">
+        <h3 class="t-h">Supplementary data workbook</h3>
+        <p class="t-small" style="margin:8px 0 12px">One .xlsx file. Qualitative plant-level data, quantitative
+        plant-level data, plot means, genotype means, mean squares, then one sheet per analysis.</p>
+        <div class="note" style="margin-bottom:12px"><strong class="num">${sheetCount}</strong> sheets will be written.
+        ${R?'':'<br>Run the analyses first if you want the result sheets included.'}</div>
+        <button class="btn btn-primary" data-act="xlsx">${icon('down')}Download workbook</button>
+      </div>
+      <div class="card card-pad">
+        <h3 class="t-h">Figures</h3>
+        <p class="t-small" style="margin:8px 0 12px">A zip with every figure the analysis produced, each as an
+        editable SVG and a 2× PNG for pasting into a manuscript.</p>
+        <div class="note" style="margin-bottom:12px">${R&&R.figs?`<strong class="num">${R.figs.length}</strong> figures ready:
+          ${R.figs.map(f=>f.name.replace(/_/g,' ')).join(', ')}`:'Run an analysis to generate figures.'}</div>
+        <button class="btn btn-primary" data-act="zip" ${R&&R.figs&&R.figs.length?'':'disabled'}>${icon('down')}Download figures</button>
+      </div>
+    </div>
+    <div class="card card-pad" style="margin-top:16px">
+      <h3 class="t-h">Trial file (.cbk)</h3>
+      <p class="t-small" style="margin:8px 0 12px">The whole trial in one file: design, entries, traits, codes and
+      every recorded value. Your backup, your way of moving a trial between computers, and how a colleague opens
+      your data in their own copy.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" data-act="cbk-save">${icon('down')}Save this trial</button>
+        <button class="btn" data-act="cbk-open">Open a trial file</button>
+        <button class="btn" data-act="cbk-all">Back up every trial</button></div></div>
+    <div class="note" style="margin-top:20px">Trials live in this browser. Save a .cbk after every recording
+    session so a cleared browser never costs you data.</div>
+  </div>`;
+}
+
+/* ============================================================
+   RENDER + EVENTS
+   ============================================================ */
+function render(){
+  const p=active();
+  const body=!p?screenHome()
+    :VIEW.screen==='overview'?screenOverview()
+    :VIEW.screen==='record'?screenRecord()
+    :VIEW.screen==='traits'?screenTraits()
+    :VIEW.screen==='analysis'?screenAnalysis()
+    :VIEW.screen==='export'?screenExport()
+    :screenOverview();
+  $('#app').innerHTML=topbar()+
+    `<div class="shell">${rail()}<main class="main">${body}
+      <div class="deptmark">Department of Plant Breeding and Genetics, IUB</div></main></div>`;
+  paintSave();
+}
+function scrollTop(){const m=$('.main'); if(m){m.scrollTo?m.scrollTo({top:0}):m.scrollTop=0;}}
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]'); if(!b)return;
+  const act=b.dataset.act, p=active();
+  if(act==='new'){openWizard();return;}
+  if(act==='example'){ seedExample(); if(VIEW.screen==='home'){render();toast('Example trial loaded');} return; }
+  if(act==='home'){DB.activeId=null;VIEW.screen='home';VIEW.results=null;editSel=null;persist();render();return;}
+  if(act==='open'){DB.activeId=b.dataset.id;VIEW.screen='overview';VIEW.entry=null;VIEW.rep=1;
+    VIEW.results=null;editSel=null;persist();render();return;}
+  if(act==='del'){
+    const id=b.dataset.id, pr=DB.projects.find(x=>x.id===id); if(!pr)return;
+    confirmDialog('Delete this trial?',
+      `${pr.name} and all ${pr.entries.length*pr.reps*pr.plants} plant records will be removed. This cannot be undone.`,
+      'Delete trial',()=>{ DB.projects=DB.projects.filter(x=>x.id!==id);
+        if(DB.activeId===id){DB.activeId=null;VIEW.screen='home';}
+        try{localStorage.setItem('cottonbook.seeded','1');}catch(e2){}
+        persist();render();toast('Trial deleted'); });
+    return;}
+  if(act==='go'){VIEW.screen=b.dataset.screen; if(b.dataset.screen==='traits')editSel=null; render();scrollTop();return;}
+  if(act==='jump'){VIEW.entry=b.dataset.e;VIEW.rep=+b.dataset.r;VIEW.screen='record';render();return;}
+  if(act==='tab'){VIEW.tab=b.dataset.v;render();return;}
+  if(act==='ttab'){traitTab=b.dataset.v;render();return;}
+  if(act==='pick-r'){VIEW.rep=+b.dataset.v;render();return;}
+  if(act==='prev-entry'||act==='next-entry'){
+    const i=p.entries.findIndex(x=>x.id===VIEW.entry);
+    const n=act==='next-entry'?i+1:i-1;
+    if(n>=0&&n<p.entries.length){VIEW.entry=p.entries[n].id;render();scrollTop();}
+    return;}
+  if(act==='copy-rep'){
+    const src=VIEW.rep-1;
+    for(let pl=1;pl<=p.plants;pl++){
+      const a=cell(p,VIEW.entry,src,pl), c=cell(p,VIEW.entry,VIEW.rep,pl);
+      c.quant={...a.quant}; c.qual={...c.qual,...a.qual};
+    }
+    persist();render();toast('Copied R'+src+' into R'+VIEW.rep);return;}
+  if(act==='fill-row'){
+    const first=$('#gridbody .ginp, #gridbody .gsel');
+    if(!first){toast('Nothing to fill');return;}
+    $$('#gridbody tr').forEach(tr=>{
+      const cs=tr.querySelectorAll('.ginp,.gsel');
+      if(!cs.length)return;
+      const v=cs[0].value; if(!v)return;
+      cs.forEach((c,i)=>{if(i)writeCell(c,v);});
+    });
+    persist();refreshDerived();toast('Filled across');return;}
+  if(act==='apply-scope'){
+    p.traits.qual=[...editSel.Q]; p.traits.quant=[...editSel.M];
+    persist();editSel=null;render();toast('Sheet updated');return;}
+  if(act==='reset-scope'){editSel=null;render();return;}
+  if(act==='proc'){
+    const id=b.dataset.id;
+    VIEW.sel.has(id)?VIEW.sel.delete(id):VIEW.sel.add(id);
+    render();return;}
+  if(act==='sel-all'){
+    PROCS.forEach(x=>{
+      if(x.needLT&&p.design!=='LT')return;
+      if(x.needPlants&&p.plants<2)return;
+      if(x.g==='Quantitative'&&!analysableQuant(p).length)return;
+      if(x.g==='Qualitative'&&!analysableQual(p).length)return;
+      VIEW.sel.add(x.id);});
+    render();return;}
+  if(act==='sel-none'){VIEW.sel.clear();VIEW.results=null;render();return;}
+  if(act==='run'){
+    b.disabled=true; b.textContent='Running…';
+    setTimeout(()=>{
+      try{
+        const R=runAnalysis(p,VIEW.sel,VIEW.dep);
+        R.figs=buildFigures(p,R);
+        VIEW.results=R; render();
+        const el=$$('.sheet')[0]; if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});
+        toast(`${R.sections.length} analyses complete`);
+      }catch(err){ console.error(err); toast('Analysis failed: '+err.message); render(); }
+    },30);
+    return;}
+  if(act==='cbk-save'){exportTrialFile();return;}
+  if(act==='cbk-open'){openTrialFile();return;}
+  if(act==='cbk-all'){exportLibrary();return;}
+  if(act==='xlsx'){exportWorkbook();return;}
+  if(act==='zip'){exportFigures();return;}
+  if(pickerClick(b,editSel?editSel.Q:new Set(),editSel?editSel.M:new Set(),p)){render();return;}
+});
+
+document.addEventListener('change',e=>{
+  const p=active();
+  const el=e.target;
+  if(el.dataset.act==='pick-e'){VIEW.entry=el.value;render();return;}
+  if(el.dataset.act==='dep'){VIEW.dep=el.value;return;}
+  if(el.classList&&el.classList.contains('gsel')){writeCell(el,el.value);persist();refreshDerived();return;}
+  if(el.dataset.code!==undefined){p.codes=p.codes||{};
+    const v=el.value.trim(); if(v)p.codes[el.dataset.code]=v; else delete p.codes[el.dataset.code];
+    persist();return;}
+  if(el.dataset.grp!==undefined){p.groups=p.groups||{};
+    const v=el.value.trim(); if(v)p.groups[el.dataset.grp]=v; else delete p.groups[el.dataset.grp];
+    persist();return;}
+  if(el.dataset.ename!==undefined){const en=p.entries.find(x=>x.id===el.dataset.ename);
+    if(en){en.name=el.value.trim()||en.code;persist();}return;}
+});
+
+document.addEventListener('input',e=>{
+  const el=e.target;
+  if(el.classList&&el.classList.contains('ginp')){
+    writeCell(el,el.value); persist(); refreshDerived();
+  }
+});
+
+document.addEventListener('paste',e=>{
+  const el=e.target;
+  if(!el.classList||!(el.classList.contains('ginp')||el.classList.contains('gsel')))return;
+  const txt=(e.clipboardData||window.clipboardData).getData('text');
+  if(!txt||(!txt.includes('\t')&&!txt.includes('\n')))return;
+  e.preventDefault(); pasteBlock(el,txt);
+});
+
+document.addEventListener('keydown',e=>{
+  const el=e.target;
+  if(el.classList&&(el.classList.contains('ginp')||el.classList.contains('gsel'))){
+    const r=+el.dataset.r, c=+el.dataset.c;
+    let t=null;
+    if(e.key==='Enter'||e.key==='ArrowDown') t=gridAt(r+1,c);
+    else if(e.key==='ArrowUp') t=gridAt(r-1,c);
+    else if(e.key==='ArrowRight'&&el.classList.contains('ginp')&&el.selectionStart===el.value.length) t=gridAt(r,c+1);
+    else if(e.key==='ArrowLeft'&&el.classList.contains('ginp')&&el.selectionStart===0) t=gridAt(r,c-1);
+    if(t){e.preventDefault();t.focus();if(t.select)t.select();}
+  }
+  if(e.key==='Escape'&&wiz)closeWizard();
+});
+
+/* ============================================================
+   WORKED EXAMPLE
+   ============================================================ */
+function seedExample(){
+  const have=DB.projects.find(x=>x.exampleOf==='morph-yield');
+  if(have){ DB.activeId=have.id; VIEW.screen='overview'; render(); toast('Example trial is already loaded'); return; }
+  const names=['AR-5C','14004','IUB-23','16002','16003','16004','16009','15008','AR-4','15018'];
+  const QUANT=['p_height','nodes_1st','mono_pl','symp_pl','leaf_area','pet_len','boll_len','boll_brd',
+    'ped_len','bract_len_cm','bract_wid_cm','bolls_pl','boll_wt','y_seed','y_lint','seed_idx',
+    'got','staple','micron','fib_str','lint_idx','unif','spin_idx'];
+  const QUAL=['growth','stem_pig','stem_hair','leaf_col','leaf_type','leaf_app','leaf_hair','leaf_nect',
+    'pet_anth','leaf_goss','boll_shape','boll_col','boll_habit','boll_surf','boll_tip'];
+  const p=newProject({name:'Morphological characterization of cotton breeding lines',
+    season:'Kharif 2026', site:'The Islamia University of Bahawalpur',
+    investigator:'Plant Breeding Section', plantMode:'multi', plants:5,
+    design:'RCBD', reps:3, names, selQ:QUAL, selM:QUANT});
+  p.exampleOf='morph-yield';
+  const codes={p_height:'PH',nodes_1st:'NFFB',mono_pl:'NMP',symp_pl:'NSP',leaf_area:'LA',pet_len:'PTL',
+    boll_len:'BOL',boll_brd:'BOW',ped_len:'PDL',bract_len_cm:'BRL',bract_wid_cm:'BRW',
+    bolls_pl:'BPP',boll_wt:'BW',y_seed:'SCY',y_lint:'LY',seed_idx:'SI',got:'GOT',staple:'SL',
+    micron:'MIC',fib_str:'FS',lint_idx:'LI',unif:'UI',spin_idx:'SPI'};
+  p.codes={...codes};
+  QUANT.forEach(k=>p.groups[k]=['got','staple','micron','fib_str','lint_idx','unif','spin_idx'].includes(k)
+    ?'Fibre':['bolls_pl','boll_wt','y_seed','y_lint','seed_idx'].includes(k)?'Yield':'Morphological');
+  const base={
+    p_height:[105.2,89.9,133.1,115.4,112.8,101.5,130.4,105.7,111.3,143.3],
+    nodes_1st:[6.0,3.6,5.4,4.5,4.7,3.8,4.9,5.7,3.4,6.2],
+    mono_pl:[1.23,1.33,1.63,0.67,1.57,0.70,1.27,1.57,1.50,2.77],
+    symp_pl:[15.2,18.8,22.5,19.9,16.7,12.7,27.8,20.7,19.1,29.2],
+    leaf_area:[124.1,91.8,144.8,115.4,146.4,98.0,104.0,96.5,96.9,153.1],
+    pet_len:[8.45,6.43,9.58,8.38,9.03,6.46,4.46,7.54,6.62,8.82],
+    boll_len:[2.37,3.17,3.28,3.02,3.35,3.14,2.16,1.82,3.93,3.63],
+    boll_brd:[2.00,2.29,2.88,2.74,2.41,2.64,2.02,1.34,2.46,2.87],
+    ped_len:[1.24,0.61,1.30,1.31,1.36,1.68,1.02,0.79,1.20,1.78],
+    bract_len_cm:[2.19,2.17,2.71,3.22,3.98,3.77,3.70,1.93,3.19,3.51],
+    bract_wid_cm:[1.97,2.11,2.43,3.01,2.66,3.03,2.63,1.56,2.07,2.80],
+    bolls_pl:[31,27,38,33,35,24,41,29,30,46],
+    boll_wt:[3.1,2.9,3.6,3.3,3.4,2.8,3.5,2.7,3.2,3.8],
+    y_seed:[2410,2180,2980,2640,2760,1990,3050,2290,2520,3310],
+    y_lint:[912,824,1195,1014,1093,738,1221,858,979,1324],
+    seed_idx:[7.6,7.2,8.6,8.1,8.3,7.0,8.5,7.4,7.9,9.0],
+    got:[37.8,37.8,40.1,38.4,39.6,37.1,40.0,37.5,38.9,40.0],
+    staple:[26.9,26.4,29.1,27.6,28.8,26.1,29.0,26.6,27.9,29.6],
+    micron:[4.7,4.8,4.3,4.6,4.4,4.9,4.3,4.8,4.5,4.2],
+    fib_str:[27.2,26.8,30.8,28.1,30.1,26.2,30.4,27.0,28.6,31.2],
+    lint_idx:[4.7,4.5,5.8,5.0,5.6,4.3,5.7,4.6,5.2,6.0],
+    unif:[81.5,80.9,85.6,82.7,84.9,80.2,85.2,81.0,83.4,86.1],
+    spin_idx:[132,128,156,138,152,124,154,130,142,160]};
+  const qual={
+    growth:['medium compact','compact','spreading','medium compact','medium compact','compact','spreading','medium compact','spreading','spreading'],
+    stem_pig:['Strong','Weak','Strong','Medium','Strong','Weak','Medium','Medium','Weak','Strong'],
+    stem_hair:['Medium','Sparse','Profuse','Medium','Profuse','Sparse','Medium','Medium','Sparse','Profuse'],
+    leaf_col:['Green','Light green','Dark green','Green','Dark green','Light green','Green','Green','Light green','Dark green'],
+    leaf_type:['Normal','Normal','Normal','Normal','Normal','Normal','Normal','Normal','Normal','Normal'],
+    leaf_app:['Cup','Flat','Cup','Flat','Cup','Flat','Cup','Cup','Flat','Cup'],
+    leaf_hair:['Absent','Sparse','Profuse','Medium','Profuse','Sparse','Medium','Medium','Sparse','Profuse'],
+    leaf_nect:['Present','Present','Absent','Present','Present','Absent','Present','Present','Present','Present'],
+    pet_anth:['Present','Absent','Present','Present','Present','Absent','Absent','Present','Absent','Present'],
+    leaf_goss:['Normal','Low','High','Normal','High','Low','Normal','Normal','Low','High'],
+    boll_shape:['Oval','Round','Conical','Oval','Oval','Round','Conical','Oval','Round','Conical'],
+    boll_col:['Green','Green','Red','Green','Red','Green','Green','Green','Green','Red'],
+    boll_habit:['Cluster','Solitary','Cluster','Solitary','Cluster','Solitary','Cluster','Cluster','Solitary','Cluster'],
+    boll_surf:['Smooth','Finely pitted','Smooth','Finely pitted','Smooth','Roughly pitted','Finely pitted','Smooth','Finely pitted','Smooth'],
+    boll_tip:['Prominent','Slight','Prominent','Medium','Prominent','Absent','Medium','Slight','Medium','Prominent']};
+  // a few off-types so the uniformity analysis has something to find
+  const offType={2:{growth:'spreading'},6:{boll_tip:'Prominent'},9:{leaf_app:'Flat'}};
+  p.entries.forEach((e,gi)=>{
+    for(let r=1;r<=p.reps;r++)for(let pl=1;pl<=p.plants;pl++){
+      const c=cell(p,e.id,r,pl);
+      QUANT.forEach(k=>{
+        const t=QUANT_BY_K[k]||(p.custom.quant.find(x=>x.k===k));
+        const plot=Math.sin(gi*2.7+r*1.9)*0.022;
+        const within=Math.sin(gi*1.3+r*2.6+pl*4.1)*0.030+Math.cos(pl*2.2+gi)*0.018;
+        const v=base[k][gi]*(1+plot+within);
+        c.quant[k]=(t.dp===0?Math.round(v):v).toFixed(t.dp??2);
+      });
+      QUAL.forEach(k=>{
+        let v=qual[k][gi];
+        const off=offType[gi];
+        if(off&&off[k]&&pl===p.plants&&r===1) v=off[k];
+        c.qual[k]=v;
+      });
+    }
+  });
+  persist();
+}
+
+/* ---------------- boot ---------------- */
+load();
+// the app always starts empty; the example trial loads only when asked for
+DB.activeId=null; VIEW.screen='home';
+render(); saveState='saved'; saveAt=new Date(); paintSave();
+
+</script>
+</body>
+</html>
