@@ -1,0 +1,11 @@
+{
+  "appId": "online.devcampsolutions.cottonbook",
+  "appName": "CottonBook",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
