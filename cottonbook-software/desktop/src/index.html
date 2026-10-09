@@ -485,6 +485,28 @@ table.grid tbody tr:hover td{background:var(--leaf-soft)}
   color:var(--ink-2);appearance:none}
 .gsel[data-set]{color:var(--leaf-press);font-weight:500;background:var(--leaf-tint)}
 .gsel:focus{outline:none;box-shadow:inset 0 0 0 2px var(--leaf);background:#fff}
+
+/* ---- phone layout: a bottom tab bar replaces the side rail ---- */
+.tabbar{display:none}
+@media (max-width:860px){
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:60;background:#fff;
+    border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px))}
+  .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;
+    border-radius:10px;color:var(--ink-3);font-size:10.5px;font-weight:500;background:none;border:none}
+  .tabbar button[aria-current="true"]{color:var(--leaf-press);background:var(--leaf-tint)}
+  .main{padding-bottom:78px}
+  .plotbar{bottom:80px}
+  .toast{bottom:94px}
+  .topbar{padding:0 14px;gap:10px}
+  .brand-sub,.topbar-mid .pill,.topbar-mid .t-small{display:none}
+  .page-head{flex-wrap:wrap;gap:12px}
+  .unit-row select{width:100%!important}
+}
+/* ---- qualitative option buttons ---- */
+table.grid td.optcell{padding:9px 12px;border-bottom:1px solid var(--line-2)}
+table.grid td.optcell .opts{display:flex;flex-wrap:wrap;gap:6px}
+table.grid tr[data-filled="1"] td.sticky-col{box-shadow:inset 3px 0 0 var(--leaf-bright)}
+table.grid tr[data-filled="0"] td.sticky-col{box-shadow:inset 3px 0 0 var(--amber)}
 </style>
 </head>
 <body>
@@ -1386,6 +1408,15 @@ function topbar(){
     <div class="topbar-end">${p?`<span class="save" id="saveflag" data-state="saved"><span class="dot"></span>Saved</span>`:''}</div>
   </header>`;
 }
+function tabbar(){
+  const p=active(); if(!p)return '';
+  const items=[['home','Trials','table'],['overview','Overview','grid'],['record','Record','pen'],
+    ['traits','Traits','cog'],['analysis','Analyse','chart'],['export','Export','down']];
+  return `<nav class="tabbar" aria-label="Sections">${items.map(([k,l,i])=>
+    k==='home'?`<button data-act="home">${icon(i,20)}<span>${l}</span></button>`
+    :`<button data-act="go" data-screen="${k}" aria-current="${VIEW.screen===k}">${icon(i,20)}<span>${l}</span></button>`
+  ).join('')}</nav>`;
+}
 function rail(){
   const p=active(); if(!p)return '';
   const pr=projectProgress(p), sc=scope(p);
@@ -1564,7 +1595,7 @@ function renderWizard(){
       Error degrees of freedom <strong class="num">${errDf}</strong>.
       ${errDf<10?'<br><span style="color:#7E5A08">Below 10 error df the F-test is weak. Add a replication if the field allows.</span>':''}</div>`}
     </div>`
-  : step===4 ? traitPickerHTML(wiz.Q,wiz.M)
+  : step===4 ? traitPickerHTML(wiz.Q,wiz.M,wizPicker())
   : wiz.design==='LT' ? `
     <div class="note">Entries are generated from your lines and testers. You can rename any of them later
     from the Traits screen.</div>
@@ -1589,6 +1620,9 @@ function renderWizard(){
     'The design decides which model runs later.','Only the traits you tick appear on the sheet.',
     wiz.design==='LT'?'Check the generated entry list.':'You can rename an entry at any time.'];
 
+  const oldBody=s.querySelector('.modal-body');
+  const keepTop=(oldBody&&s.dataset.step===String(step))?oldBody.scrollTop:0;   // same step: keep place
+  s.dataset.step=String(step);
   s.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="New trial"
       style="${step===4?'width:min(980px,100%)':''}">
     <div class="modal-head"><div style="flex:1"><h2 class="t-title">New trial</h2>
@@ -1603,6 +1637,7 @@ function renderWizard(){
         <button class="btn btn-primary" data-w="next">${step===5?'Create trial':'Continue'}</button></div>
     </div></div>`;
 
+  const newBody=s.querySelector('.modal-body'); if(newBody) newBody.scrollTop=keepTop;
   s.onclick=e=>{
     const b=e.target.closest('[data-w]'); if(!b)return;
     const k=b.dataset.w;
@@ -1626,7 +1661,7 @@ function renderWizard(){
       toast(`Trial created — ${p.entries.length*p.reps*p.plants} plant records to fill`);
       return;
     }
-    if(pickerClick(b,wiz.Q,wiz.M)){renderWizard();}
+    if(pickerClick(b,wiz.Q,wiz.M,wizPicker())) refreshPicker(s,wiz.Q,wiz.M,wizPicker());
   };
   s.oninput=e=>{
     const gi=e.target.dataset.gname;
@@ -1721,6 +1756,25 @@ function pickerClick(b,Q,M,p){
     set.has(b.dataset.k)?set.delete(b.dataset.k):set.add(b.dataset.k); return true;}
   if(k==='addcustom'){ openCustomTrait(); return false; }
   return false;
+}
+
+function wizPicker(){ return {custom:(wiz&&wiz.custom)||{qual:[],quant:[]}}; }
+function refreshPicker(root,Q,M,p){
+  const QG=p?qualGroups(p):QUAL_GROUPS, MG=p?quantGroups(p):QUANT_GROUPS;
+  root.querySelectorAll('.tchip').forEach(b=>{
+    const set=b.dataset.kind==='q'?Q:M; b.setAttribute('aria-pressed',set.has(b.dataset.k)?'true':'false');});
+  root.querySelectorAll('.pgrp-head').forEach(b=>{
+    const set=b.dataset.kind==='q'?Q:M, groups=b.dataset.kind==='q'?QG:MG;
+    const gr=groups.find(g=>g.id===b.dataset.id); if(!gr)return;
+    const st=groupState(gr.traits,set);
+    const cb=b.querySelector('.cbox'), sm=b.querySelector('small');
+    if(cb)cb.dataset.s=st.s; if(sm)sm.textContent=st.on+'/'+st.total;});
+  const bar=root.querySelector('.pick-bar');
+  if(bar){const n=bar.querySelectorAll('.num');
+    if(n.length>=3){n[0].textContent=Q.size+M.size;n[1].textContent=Q.size;n[2].textContent=M.size;}}
+  const match=PRESETS.find(pre=>{const ps=presetSets(pre,p);
+    return ps.Q.size===Q.size&&ps.M.size===M.size&&[...ps.Q].every(k=>Q.has(k))&&[...ps.M].every(k=>M.has(k));});
+  root.querySelectorAll('[data-w="preset"]').forEach(b=>b.setAttribute('aria-pressed',match&&match.id===b.dataset.v?'true':'false'));
 }
 
 /* ---- custom trait dialog ---- */
@@ -1870,11 +1924,40 @@ function gridCols(p){
   if(p.plants>1) return Array.from({length:p.plants},(_,i)=>({rep:VIEW.rep,plant:i+1,label:'P'+(i+1)}));
   return Array.from({length:p.reps},(_,i)=>({rep:i+1,plant:1,label:'R'+(i+1)}));
 }
+function qualRowHTML(p,e,cols,qi,t){
+  const cl=cell(p,e.id,cols[qi].rep,cols[qi].plant);
+  const v=cl.qual[t.k]??'';
+  const counts={};
+  cols.forEach(c=>{const x=cell(p,e.id,c.rep,c.plant).qual[t.k]; if(filled(x))counts[x]=(counts[x]||0)+1;});
+  const ks=Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  const code=codeOf(p,t);
+  return `<tr data-filled="${v?1:0}"><td class="sticky-col">
+      <div style="display:flex;align-items:baseline;gap:8px"><span>${esc(t.n)}</span>
+        ${code?`<span class="num" style="font-size:11px;color:var(--seed)">${esc(code)}</span>`:''}</div></td>
+    <td class="optcell"><div class="opts">${t.o.map((o,i)=>`<button class="opt" data-act="qual-pick" data-k="${t.k}" data-v="${esc(o)}" aria-pressed="${v===o}">${esc(o)}<code>${i+1}</code></button>`).join('')}</div></td>
+    <td class="gmean t-meta">${ks.length?esc(ks[0])+' ('+counts[ks[0]]+'/'+cols.length+')':'—'}</td></tr>`;
+}
+function qualPlantBar(p,e,cols,qi){
+  const Q=scope(p).Q, what=p.plants>1?'plant':'replication';
+  return `<div class="unit-row" style="margin-top:10px">
+    <span class="t-meta" style="width:58px">${p.plants>1?'Plant':'Replication'}</span>
+    ${cols.map((c,i)=>{const cl=cell(p,e.id,c.rep,c.plant);
+      const dn=[...Q].filter(k=>filled(cl.qual[k])).length;
+      const f=Q.size&&dn>=Q.size?'full':dn>0?'part':'none';
+      return `<button class="chip" data-act="qcol" data-i="${i}" aria-pressed="${i===qi}"><span class="ring" data-f="${f}"></span>${c.label}</button>`;}).join('')}
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="t-small" style="display:flex;gap:6px;align-items:center;cursor:pointer">
+        <input type="checkbox" data-act="qall" ${VIEW.qall?'checked':''}>Apply each choice to every ${what}</label>
+      <button class="btn btn-sm" data-act="qcopy" ${qi===0?'disabled':''}>Copy from ${qi>0?cols[qi-1].label:'—'}</button>
+      <button class="btn btn-sm btn-primary" data-act="qnext" ${qi>=cols.length-1?'disabled':''}>Next ${what} →</button>
+    </div></div>`;
+}
 function screenRecord(){
   const p=active();
   if(!VIEW.entry||!p.entries.find(e=>e.id===VIEW.entry)) VIEW.entry=p.entries[0].id;
   const e=p.entries.find(x=>x.id===VIEW.entry);
   const cols=gridCols(p);
+  const qi=Math.min(VIEW.qcol||0,cols.length-1); VIEW.qcol=qi;
   const traits=VIEW.tab==='qual'?scopedQual(p):scopedQuant(p);
   const sc=scope(p);
   const ei=p.entries.findIndex(x=>x.id===VIEW.entry);
@@ -1887,7 +1970,10 @@ function screenRecord(){
     ${VIEW.tab==='quant'?`<th class="num" style="min-width:84px">Mean</th><th class="num" style="min-width:64px">CV%</th>`:
       `<th class="num" style="min-width:120px">Modal class</th>`}</tr>`;
 
+  const headQual=`<tr><th class="sticky-col" style="min-width:230px">Descriptor</th>
+    <th>Tap one option for <strong>${esc(cols[qi].label)}</strong></th><th class="num" style="min-width:150px">Modal class</th></tr>`;
   const rows=traits.map((t,ri)=>{
+    if(VIEW.tab==='qual') return qualRowHTML(p,e,cols,qi,t);
     const cells=cols.map((c,ci)=>{
       const cl=cell(p,e.id,c.rep,c.plant);
       if(VIEW.tab==='qual'){
@@ -1952,13 +2038,16 @@ function screenRecord(){
          :`<span class="pill pill-plain" style="margin-left:12px">Single plant per replication — all reps shown</span>`}
         <div style="margin-left:auto;display:flex;gap:6px">
           ${p.plants>1&&VIEW.rep>1?`<button class="btn btn-sm" data-act="copy-rep">${icon('copy',14)}Copy R${VIEW.rep-1}</button>`:''}
-          <button class="btn btn-sm" data-act="fill-row" title="Fill the row from its first value">Fill across</button>
+          ${VIEW.tab==='quant'?`<button class="btn btn-sm" data-act="fill-row" title="Fill the row from its first value">Fill across</button>`:''}
         </div></div>
+      ${VIEW.tab==='qual'?qualPlantBar(p,e,cols,qi):''}
     </div>
 
     <div class="sheet">
       <div class="scroll-x" style="max-height:66vh"><table class="tbl grid">
-        <thead>${head}</thead><tbody id="gridbody">${rows}</tbody></table></div>
+        <thead>${VIEW.tab==='qual'?headQual:head}</thead><tbody id="gridbody">${rows||`<tr><td colspan="${cols.length+3}" style="padding:36px 20px;text-align:center;color:var(--ink-2)">
+        <strong style="color:var(--ink)">No ${VIEW.tab==='qual'?'qualitative':'quantitative'} traits on this sheet.</strong><br>
+        ${(VIEW.tab==='qual'?sc.M.size:sc.Q.size)?`Switch to the ${VIEW.tab==='qual'?'Quantitative':'Qualitative'} tab above, or `:''}add traits from the <a href="#" data-act="go" data-screen="traits">Traits</a> screen.</td></tr>`}</tbody></table></div>
     </div>
     <div class="plotbar">
       <span class="bar ${done>0&&done<tot?'partial':''}"><i style="width:${tot?Math.round(done/tot*100):0}%"></i></span>
@@ -2945,6 +3034,19 @@ async function exportFigures(){
 }
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,46);
 async function save(filename,blob){
+  const cap=window.Capacitor;
+  if(cap&&cap.isNativePlatform&&cap.isNativePlatform()&&cap.Plugins&&cap.Plugins.Filesystem&&cap.Plugins.Share){
+    try{
+      const b64=await new Promise((res,rej)=>{const r=new FileReader();
+        r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(blob);});
+      const w=await cap.Plugins.Filesystem.writeFile({path:filename,data:b64,directory:'CACHE'});
+      await cap.Plugins.Share.share({title:filename,url:w.uri,dialogTitle:'Save or send '+filename});
+    }catch(e){
+      const m=String((e&&e.message)||e||'');
+      if(!/cancel/i.test(m)) toast('Could not open the share sheet: '+m);
+    }
+    return;
+  }
   try{
     const dl=window.claude&&await window.claude.use('downloads');
     if(dl){ await dl.save({filename,data:blob}); toast('Saved '+filename); return; }
@@ -3039,6 +3141,15 @@ function screenExport(){
    ============================================================ */
 function render(){
   const p=active();
+  const wasScreen=VIEW._prev;
+  const keepY=window.scrollY||0;
+  const m0=$('.main'); const keepMain=m0?m0.scrollTop:0;
+  if(p&&VIEW.screen==='record'&&VIEW._prev!=='record'){
+    const sc0=scope(p);
+    if(VIEW.tab==='quant'&&sc0.M.size===0&&sc0.Q.size>0) VIEW.tab='qual';
+    else if(VIEW.tab==='qual'&&sc0.Q.size===0&&sc0.M.size>0) VIEW.tab='quant';
+  }
+  VIEW._prev=VIEW.screen;
   const body=!p?screenHome()
     :VIEW.screen==='overview'?screenOverview()
     :VIEW.screen==='record'?screenRecord()
@@ -3048,10 +3159,14 @@ function render(){
     :screenOverview();
   $('#app').innerHTML=topbar()+
     `<div class="shell">${rail()}<main class="main">${body}
-      <div class="deptmark">Department of Plant Breeding and Genetics, IUB</div></main></div>`;
+      <div class="deptmark">Department of Plant Breeding and Genetics, IUB</div></main></div>${tabbar()}`;
   paintSave();
+  if(wasScreen===VIEW.screen){            // same screen redrawn (a click, a toggle): stay where you were
+    const m1=$('.main'); if(m1&&keepMain) m1.scrollTop=keepMain;
+    if(keepY) window.scrollTo(0,keepY);
+  }
 }
-function scrollTop(){const m=$('.main'); if(m){m.scrollTo?m.scrollTo({top:0}):m.scrollTop=0;}}
+function scrollTop(){const m=$('.main'); if(m){m.scrollTo?m.scrollTo({top:0}):m.scrollTop=0;} try{window.scrollTo(0,0);}catch(e){}}
 
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-act]'); if(!b)return;
@@ -3080,6 +3195,29 @@ document.addEventListener('click',e=>{
     const n=act==='next-entry'?i+1:i-1;
     if(n>=0&&n<p.entries.length){VIEW.entry=p.entries[n].id;render();scrollTop();}
     return;}
+  if(act==='qcol'){VIEW.qcol=+b.dataset.i;render();return;}
+  if(act==='qnext'){VIEW.qcol=(VIEW.qcol||0)+1;render();return;}
+  if(act==='qcopy'){
+    const cols=gridCols(p), qi=Math.min(VIEW.qcol||0,cols.length-1); if(qi<1)return;
+    const a=cell(p,VIEW.entry,cols[qi-1].rep,cols[qi-1].plant), c=cell(p,VIEW.entry,cols[qi].rep,cols[qi].plant);
+    c.qual={...c.qual,...a.qual}; persist(); render(); toast('Copied from '+cols[qi-1].label); return;}
+  if(act==='qual-pick'){
+    const cols=gridCols(p), qi=Math.min(VIEW.qcol||0,cols.length-1);
+    const k=b.dataset.k, v=b.dataset.v;
+    const clear=cell(p,VIEW.entry,cols[qi].rep,cols[qi].plant).qual[k]===v;     // tapping the chosen option again clears it
+    (VIEW.qall?cols:[cols[qi]]).forEach(c=>{const cl=cell(p,VIEW.entry,c.rep,c.plant);
+      if(clear) delete cl.qual[k]; else cl.qual[k]=v;});
+    p.updated=Date.now(); persist();
+    const tr=b.closest('tr');
+    tr.querySelectorAll('.opt').forEach(o=>o.setAttribute('aria-pressed',(!clear&&o===b)?'true':'false'));
+    tr.dataset.filled=clear?'0':'1';
+    const Q=scope(p).Q;
+    $$('[data-act="qcol"]').forEach(ch=>{const c=cols[+ch.dataset.i]; const cl=cell(p,VIEW.entry,c.rep,c.plant);
+      const dn=[...Q].filter(x=>filled(cl.qual[x])).length;
+      ch.querySelector('.ring').dataset.f=Q.size&&dn>=Q.size?'full':dn>0?'part':'none';});
+    refreshDerived();
+    return;
+  }
   if(act==='copy-rep'){
     const src=VIEW.rep-1;
     for(let pl=1;pl<=p.plants;pl++){
@@ -3134,11 +3272,19 @@ document.addEventListener('click',e=>{
   if(pickerClick(b,editSel?editSel.Q:new Set(),editSel?editSel.M:new Set(),p)){render();return;}
 });
 
+/* Traits screen: its chips use data-w, so they need their own listener. Updates in place, never redraws. */
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-w]'); if(!b||b.closest('#scrim'))return;
+  const p=active(); if(!p||VIEW.screen!=='traits'||!editSel)return;
+  if(pickerClick(b,editSel.Q,editSel.M,p)) refreshPicker(document,editSel.Q,editSel.M,p);
+});
+
 document.addEventListener('change',e=>{
   const p=active();
   const el=e.target;
   if(el.dataset.act==='pick-e'){VIEW.entry=el.value;render();return;}
   if(el.dataset.act==='dep'){VIEW.dep=el.value;return;}
+  if(el.dataset.act==='qall'){VIEW.qall=el.checked;return;}
   if(el.classList&&el.classList.contains('gsel')){writeCell(el,el.value);persist();refreshDerived();return;}
   if(el.dataset.code!==undefined){p.codes=p.codes||{};
     const v=el.value.trim(); if(v)p.codes[el.dataset.code]=v; else delete p.codes[el.dataset.code];
