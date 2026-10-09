@@ -29,6 +29,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Unpack the Android project
+        run: |
+          test -f mobile.zip || { echo "mobile.zip is not in the repository. Upload it to the top level."; exit 1; }
+          mkdir -p cottonbook-software
+          unzip -oq mobile.zip -d cottonbook-software
+          ls "$APP_DIR"
+
       - name: Install dependencies
         working-directory: ${{ env.APP_DIR }}
         run: npm install
