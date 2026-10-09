@@ -1,6 +1,6 @@
 [package]
 name = "cottonbook"
-version = "1.0.0"
+version = "1.0.1"
 description = "CottonBook — cotton breeder trait recorder"
 authors = ["Muhammad Faisal Haqani"]
 edition = "2021"
