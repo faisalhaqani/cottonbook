@@ -6,7 +6,7 @@ on:
       tag:
         description: 'Release to attach the APK to'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.0.1'
 
 permissions:
   contents: write
@@ -42,6 +42,9 @@ jobs:
 
       - name: Create the Android project
         working-directory: ${{ env.APP_DIR }}
+        env:
+          APP_VERSION_NAME: '1.0.1'
+          APP_VERSION_CODE: '2'
         run: |
           npx cap add android
           node scripts/prepare-android.mjs
@@ -55,14 +58,14 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Name the file
-        run: cp "${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk" CottonBook_1.0.0.apk
+        run: cp "${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk" CottonBook_1.0.1.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: CottonBook-apk
-          path: CottonBook_1.0.0.apk
+          path: CottonBook_1.0.1.apk
 
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ inputs.tag }}" CottonBook_1.0.0.apk --clobber --repo "${{ github.repository }}"
+        run: gh release upload "${{ inputs.tag }}" CottonBook_1.0.1.apk --clobber --repo "${{ github.repository }}"
