@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -31,9 +33,17 @@ jobs:
 
       - name: Unpack the Android project
         run: |
-          test -f mobile.zip || { echo "mobile.zip is not in the repository. Upload it to the top level."; exit 1; }
+          # use the most recently uploaded mobile zip, whatever the browser called it
+          shopt -s nullglob
+          best=""; bestt=0
+          for f in mobile*.zip; do
+            t=$(git log -1 --format=%ct -- "$f")
+            if [ "${t:-0}" -gt "$bestt" ]; then best="$f"; bestt=$t; fi
+          done
+          test -n "$best" || { echo "No mobile zip found. Upload it to the top level."; exit 1; }
+          echo "Using the most recently uploaded zip: $best"
           mkdir -p cottonbook-software
-          unzip -oq mobile.zip -d cottonbook-software
+          unzip -oq "$best" -d cottonbook-software
           ls "$APP_DIR"
 
       - name: Install dependencies
